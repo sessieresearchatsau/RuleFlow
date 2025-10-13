@@ -97,33 +97,41 @@ class RuleSet(ABC):
 
 
 class Event:
-    def __init__(self, step: int, applied_rules: list[Rule], state: CellString):
+    def __init__(self, step: int, applied_rules: list[Rule]):
         self.step: int  # also known as time
         self.applied_rules: list[Rule]
-        self.state: CellString | None  # the current state.
+
 
 
 class SS(ABC):
     """The abstract substitution engine that operates on string of quanta using rulesets."""
 
-    @abstractmethod
-    def __init__(self, rule_set: list[Rule | str] | RuleSet,
-                 initial_state: CellString | str, *args: Any, **kwargs: Any):
+    def __init__(self, rule_set: RuleSet,
+                 initial_state: CellString):
         self.rule_set: RuleSet = rule_set
-        self.current_state: CellString = initial_state
-        self.events: list[Event] = [Event(step=0, applied_rules=[], state=initial_state)]  # time states
+        self.states: list[CellString] = [initial_state]
+        self.events: list[Event] = [Event(step=0, applied_rules=[])]  # time states
         self.pending_deltas: list[DeltaSet] = []
+        initial_state.on_change.connect(self.on_deltas_detected)
+
+    @property
+    def current_state(self) -> CellString:
+        return self.states[-1]
 
     @abstractmethod
     def evolve(self):
         """This should be implemented by subclasses.
         - create a new Event
-        - copy current state (copy the current CellString)
+        - duplicate current state
         - apply ruleset to state
-        - the .apply() function should return the applied rule(s), the added cells, and the removed cells.
-        - use this info, update the added cells with pointers to the current event as the creation event.
-        - likewise, set the current event as the destruction event for any removed cells.
+        - the .apply() function should return the applied rule(s) which should be added to the new event
+        - process the pending deltas (update the cells created_by and destroyed_by fields)
         """
+        pass
+
+    def rollback(self):
+        """This should be implemented by subclasses.
+        Undo the last evolve"""
         pass
 
     def on_deltas_detected(self, delta: DeltaSet):
