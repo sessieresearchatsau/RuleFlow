@@ -22,30 +22,33 @@ class Signal:
         self.callables_count = len(self.callables)
 
 
-
 class Cell:
-    """A single mutable unit within a universe (a.k.a. Quanta)."""
+    """A single mutable unit within a universe/string (a.k.a. Quanta).
+    A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space."""
     def __init__(self, quanta: Any):
         self.quanta: Any = quanta
-        self.created_by: Event | None = None
-        self.destroyed_by: Event | None = None
+        self.created_at: Event | None = None
+        self.destroyed_at: Event | None = None
+        self.tags: list[str] = []  # optional additional tags can be added for more nuance rules
 
         # Plugins
         self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
 
     def __str__(self):
+        """String representation of quanta"""
         return self.quanta_str_translator(self.quanta)
 
-    def __eq__(self, other: Cell | Any):
-        return self.quanta == (other.quanta if isinstance(other, Cell) else other)
+    def __eq__(self, other: Cell):
+        """Semantic equality (use is for true equality)"""
+        return self.quanta == other.quanta
 
 
 DeltaSet = tuple[tuple[Cell, ...], tuple[Cell, ...]]  # in the format (new_cells, destroyed_cells)
 class CellString:
-    """Mutable string made up of `Cells` (a.k.a. Universe State)."""
+    """Mutable string made up of `Cells` (a.k.a. Universe State). Higher dimensional strings should be considered."""
 
     def __init__(self, cells: list[Cell]):
-        self.cells: list[Cell] = cells
+        self.cells: list[Cell] = cells  # 👉👉👉 TODO what about higher dimensions?
         self.on_change: Signal = Signal()
 
     def __str__(self):
@@ -60,6 +63,8 @@ class CellString:
 
     def insert(self, new: CellString, at_pos: int) -> bool:
         pass
+
+    # 👉👉👉 TODO implement modifiers (what are some others I should have?)
 
     def __eq__(self, other: CellString):
         pass
@@ -85,7 +90,12 @@ class RuleSet(ABC):
     def __init__(self, *args: Any, **kwargs: Any):
         """This should be implemented by subclasses.
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
-        self.rules: list[Rule]
+        raise NotImplementedError
+
+    @abstractmethod
+    @property
+    def rule(self) -> list[Rule]:
+        """This should be implemented by subclasses."""
         raise NotImplementedError
 
     @abstractmethod
@@ -97,20 +107,28 @@ class RuleSet(ABC):
 
 
 class Event:
-    def __init__(self, step: int, applied_rules: list[Rule]):
-        self.step: int  # also known as time
-        self.applied_rules: list[Rule]
+    def __init__(self, step: int):
+        self.step: int = step  # also known as time
+
+        # optional metadata for each new event (must be managed by Flow.evolve())
+        self.applied_rules: list[Rule] = []  # rules applied at this event
+        self.affected_cells: list[DeltaSet] = []  # cells affected by this event
+        self.causally_connected_events: list[Event] = []  # events whose created cells were destroyed by this event
 
 
 
-class SS(ABC):
-    """The abstract substitution engine that operates on string of quanta using rulesets."""
+class FlowABC(ABC):
+    pass  # 👉👉👉 TODO define behavior
+
+
+class Flow(FlowABC):
+    """The base class for a rule flow, additional behavior should be implemented by subclassing this class of the FlowABC class."""
 
     def __init__(self, rule_set: RuleSet,
                  initial_state: CellString):
+        self.events: list[Event] = [Event(0)]  # time steps
+        self.states: list[CellString] = [initial_state]  # remembered states
         self.rule_set: RuleSet = rule_set
-        self.states: list[CellString] = [initial_state]
-        self.events: list[Event] = [Event(step=0, applied_rules=[])]  # time states
         self.pending_deltas: list[DeltaSet] = []
         initial_state.on_change.connect(self.on_deltas_detected)
 
@@ -118,54 +136,39 @@ class SS(ABC):
     def current_state(self) -> CellString:
         return self.states[-1]
 
-    @abstractmethod
-    def evolve(self):
-        """This should be implemented by subclasses.
-        - create a new Event
-        - duplicate current state
-        - apply ruleset to state
-        - the .apply() function should return the applied rule(s) which should be added to the new event
-        - process the pending deltas (update the cells created_by and destroyed_by fields)
-        """
-        pass
-
-    def rollback(self):
-        """This should be implemented by subclasses.
-        Undo the last evolve"""
-        pass
-
     def on_deltas_detected(self, delta: DeltaSet):
         self.pending_deltas.append(delta)
 
-    @abstractmethod
+    # 👉👉👉 TODO implement these function the generic Flow class (what are some others I should have?)
+
+    def evolve(self) -> None:
+        """This should be implemented by subclasses.
+        - create a new Event
+        - create new current state
+        - apply ruleset to current state
+        - Add this to event metadata
+            - the .apply() function should return the applied rule(s)
+            - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
+        """
+        pass
+
+    def evolve_n(self, n_steps: int):
+        pass
+
+    def rollback(self, n_steps: int = 1):
+        """This should be implemented by subclasses.
+        Undo the last evolve."""
+        pass
+
+    def to_graphviz(self):
+        pass
+
+    def to_networkx_graph(self):
+        pass
+
     def __str__(self) -> str:
-        pass
-
-    @abstractmethod
-    def __repr__(self) -> str:
-        pass
-
-
-
-# ================================ Substitution System Implementation ================================
-class SSS(SS):  # this should implement the features specific to SSS
-    def __init__(self, rule_set: list[Rule | str],
-                 initial_state: CellString | str):
-        pass
-
-    def evolve(self):
-        # create Event objects
-        pass
+        return '\n'.join((str(state) for state in self.states))
 
 
 if __name__ == '__main__':
     pass
-    # sss = SSS(["ABA->AAB", "A->ABA"], "AB", 5, RulePlacement='Left')
-    # sss.worldGen()
-    # sss.worldGenNested()
-    # sss.generate_causal_diagram()
-
-    # print(SSS(["ABA->AAB", "A->ABA"], "AB", 10).ruleSet)
-    # print(SSS(["ABA->AAB", "A->ABA"], "AB", 10).ruleSet['A'])
-    # SSS(["ABA->AAB", "A->ABA", "BB->C"], "AB", 10).worldGen()
-    # SSS(["BB->C", "ABA->AAB","A->ABA"], "AB", 10, RulePlacement='Left').worldGenNested()
