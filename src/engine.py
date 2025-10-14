@@ -211,11 +211,11 @@ class Flow:
             self.current_event.inert = True
             return
         for delta in self.pending_deltas:
-            for new_cells in delta[0]:
-                new_cells.created_at = self.current_event
-            for destroyed_cells in delta[1]:
-                destroyed_cells.destroyed_at = self.current_event
-                self.current_event.causally_connected_events.append(destroyed_cells.created_at)
+            for new_cell in delta[0]:
+                new_cell.created_at = self.current_event
+            for destroyed_cell in delta[1]:
+                destroyed_cell.destroyed_at = self.current_event
+                self.current_event.causally_connected_events.append(destroyed_cell.created_at)
         self.current_event.affected_cells = self.pending_deltas
         self.pending_deltas.clear()
 

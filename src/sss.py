@@ -47,7 +47,7 @@ class ReplacementRule(RuleABC):
 
 
 class RuleSet(RuleSetABC):
-    def __init__(self, rules: list[str] | list[RuleABC]):
+    def __init__(self, rules: list[str]):
         super().__init__()
         for rule_str in rules:
             rule_str = rule_str.strip()
@@ -80,7 +80,7 @@ class SSS(Flow):
 
 
 if __name__ == "__main__":
-    rules = ["ABA->AAB", "A->ABA"]
+    rules = ["ABA->AAB", "AB.>3", "A->ABA"]
     initial = "AB"
     steps = 10
 
