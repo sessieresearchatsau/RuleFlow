@@ -69,12 +69,12 @@ class CellString:
         self.on_change: Signal = Signal()
 
         # property for cell concatenation upon printing
-        self.string_delineator: str = ''
+        self.string_delimiter: str = ''
         # plugins
         self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
 
     def __str__(self):
-        return self.string_delineator.join([self.quanta_str_translator(c) for c in self.cells])
+        return self.string_delimiter.join([self.quanta_str_translator(c) for c in self.cells])
 
     def __eq__(self, other: CellString):
         """Semantic equality (use is for true equality)"""
@@ -99,8 +99,8 @@ class CellString:
                 return i
         return -1
 
-    # ==== Modifiers ====
-    def replace(self, old: CellString, new: CellString) -> bool:
+    # ==== Modifiers ====  TODO fix so that all new cells are really new (fixes the causality bug).
+    def replace(self, old: CellString, new: CellString, copy_new: bool = True) -> bool:
         """Replace the first occurrence of old with new. Emits a DeltaSet if successful."""
         idx: int = self.find(old)
         if idx == -1:
@@ -111,7 +111,7 @@ class CellString:
         self.on_change.emit((created, destroyed))
         return True
 
-    def insert(self, new: CellString, at_pos: int) -> bool:
+    def insert(self, new: CellString, at_pos: int , copy_new: bool = True) -> bool:
         """Insert new at the specified position. Emits a DeltaSet if successful."""
         if not (0 <= at_pos <= len(self.cells)):
             return False
