@@ -24,7 +24,7 @@ class Signal:
 
 
 class Cell:
-    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable
+    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable.
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
 
     Policies:
@@ -111,6 +111,9 @@ class CellString:
         self.on_change.emit((created, destroyed))
         return True
 
+    def apply_delta(self, delta: DeltaSet):
+        ...
+
     def insert(self, new: CellString, at_pos: int , copy_new: bool = True) -> bool:
         """Insert new at the specified position. Emits a DeltaSet if successful."""
         if not (0 <= at_pos <= len(self.cells)):
@@ -128,6 +131,10 @@ class Rule(ABC):
         ``InsertionRule(insert: string, at_idx: string)`` should be a rule that inserts a string at the specified index. Whatever the init arguments are, they must be created as fields internally in an elegant format.
         """
         self.on_applied: Signal = Signal()  # emitted when a rule is successfully applied.
+
+    @abstractmethod
+    def match(self, state: CellString):
+        ...
 
     @abstractmethod
     def apply(self, to_string: CellString) -> bool:
@@ -157,7 +164,7 @@ class Event:
 
         # optional metadata for each new event (must be managed by Flow.evolve())
         self.applied_rules: list[Rule] = []  # rules applied at this event
-        self.affected_cells: list[DeltaSet] = []  # cells affected by this event
+        self.deltas: list[DeltaSet] = []  # cells affected by this event
         self.causally_connected_events: list[Event] = []  # events whose created cells were destroyed by this event
         self.inert: bool = False  # if true, the new event caused no changes to the system
 
@@ -171,9 +178,12 @@ class Flow:
 
     def __init__(self, rule_set: RuleSet,
                  initial_state: CellString):
+        # fields
         self.events: list[Event] = [Event(0)]  # time steps
         self.states: list[CellString] = [initial_state]  # remembered states
         self.rule_set: RuleSet = rule_set
+
+        # temp fields
         self.pending_deltas: list[DeltaSet] = []
 
         # make sure the first state is connected to the creation event.
@@ -197,12 +207,12 @@ class Flow:
         """ Evolve the system by one step.
 
         This can be reimplemented by subclasses to modify behavior. As it stands, it does the following:
-        - create a new current Event
-        - create new current state
-        - apply ruleset to new current state
-        - Update event and state metadata (important for tracking causality)
-            - the .apply() function should return the applied rule(s)
-            - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
+        - create a new current Event.
+        - create new current state.
+        - apply ruleset to new current state.
+        - Update event and state metadata (important for tracking causality).
+            - the .apply() function should return the applied rule(s).
+            - process the self.pending_deltas (update the cell's created_by and destroyed_by fields).
         """
         self.events.append(Event(self.current_event.step + 1))
         self.states.append(self.current_state.new_state())
@@ -216,7 +226,7 @@ class Flow:
             for destroyed_cell in delta[1]:
                 destroyed_cell.destroyed_at = self.current_event
                 self.current_event.causally_connected_events.append(destroyed_cell.created_at)
-        self.current_event.affected_cells = self.pending_deltas
+        self.current_event.deltas = self.pending_deltas
         self.pending_deltas.clear()
 
     def evolve_n(self, n_steps: int) -> None:
@@ -232,6 +242,16 @@ class Flow:
 
     def __str__(self) -> str:
         return '\n'.join((str(state) for state in self.states))
+
+
+class MultiFlow(Flow):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.flows: list[Flow] = []
+
+    def evolve(self) -> None:
+        # return all possible next states
+        ...
 
 
 if __name__ == '__main__':
