@@ -1,4 +1,4 @@
-from typing import Any, Union, Callable
+from typing import Any, Union, Callable, Sequence
 from abc import ABC, abstractmethod
 from copy import copy
 
@@ -24,7 +24,7 @@ class Signal:
 
 
 class Cell:
-    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable
+    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using shallow_clone().
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
 
     Policies:
@@ -36,7 +36,7 @@ class Cell:
     def __init__(self, quanta: Any):
         self.quanta: Any = quanta
 
-        # metadata (specific to each Cell instance)
+        # metadata (specific to each Cell instance) (NOTE: this should NOT be copied in copy operations)
         self.created_at: Event | None = None
         self.destroyed_at: Event | None = None
 
@@ -48,12 +48,25 @@ class Cell:
         """Semantic equality (use is for true equality)"""
         return self.quanta == other.quanta
 
+    def __copy__(self) -> Cell:
+        """Copies the Cell (self), but does not copy the quanta itself (it retains the reference to it). It is a shallow copy."""
+        return Cell(self.quanta)  # for now this is all that is necessary for an efficient shallow clone.
 
-DeltaSet = tuple[tuple[Cell, ...], tuple[Cell, ...]]  # in the format (new_cells, destroyed_cells)
-class CellString:
-    """Mutable string made up of `Cells` (a.k.a. Universe State). Higher dimensional strings should be considered.
+    def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__ in case the rule programmer is not competent
+        return self.__copy__()
+
+
+class CellContainer:
+    """Can be an n dimensional array with generalized modifiers and helpers."""
+    pass
+
+
+DeltaSet = tuple[Sequence[Cell], Sequence[Cell]]  # in the format (new_cells, destroyed_cells)
+class StateSpace:
+    """Mutable container made up of `Cells` (a.k.a. Universe State).
 
     Policies:
+    - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
     - All modifier methods (methods that create/destroy cells) should return bool if successful and emit any changes as DeltaSets in the .on_change signal
 
     TODO:
@@ -61,63 +74,71 @@ class CellString:
     - What other modifiers should we have?
 
     Future Considerations:
-    - What about higher dimensions?
+    - What about higher dimensions: cells being an N^2 or N^3 state space?
     """
 
     def __init__(self, cells: list[Cell]):
         self.cells: list[Cell] = cells
+
+        # Signals
         self.on_change: Signal = Signal()
 
-        # property for cell concatenation upon printing
-        self.string_delimiter: str = ''
-        # plugins
+        # Plugins
         self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
+        self.string_delimiter: str = ''
 
     def __str__(self):
         return self.string_delimiter.join([self.quanta_str_translator(c) for c in self.cells])
 
-    def __eq__(self, other: CellString):
+    def __eq__(self, other: StateSpace):
         """Semantic equality (use is for true equality)"""
         for sc, oc in zip(self.cells, other.cells):
             if sc.quanta != oc.quanta:
                 return False
         return True
 
-    def new_state(self) -> CellString:
-        """Copies the CellString, but does not copy the cells themselves (it retains references to them)."""
-        new_string: CellString = object.__new__(self.__class__)  # create new object without init
-        for k, v in self.__dict__.items():
-            setattr(new_string, k, copy(v))
+    def __len__(self) -> int:
+        return len(self.cells)
+
+    def __copy__(self) -> StateSpace:
+        """Copies the StateSpace (self), but does not copy the cells themselves (it retains references to them). It is a shallow copy."""
+        new_string: StateSpace = object.__new__(self.__class__)  # create new object without init
+        for k, v in self.__dict__.items():  # copy all fields only once
+            setattr(new_string, k, copy(v) if isinstance(v, list) else v)
         return new_string
 
     # ==== Utilities ====
-    def find(self, sub_string: CellString) -> int | None:
+    def find(self, sub_string: Sequence[Cell]) -> int | None:
         """Find the first occurrence of sub_string in self.cells and return the starting index, or -1 if not found."""
-        sub_len: int = len(sub_string.cells)
+        sub_len: int = len(sub_string)
         for i in range(len(self.cells) - sub_len + 1):
-            if all(self.cells[i + j] == sub_string.cells[j] for j in range(sub_len)):
+            if all(self.cells[i + j] == sub_string[j] for j in range(sub_len)):
                 return i
         return -1
 
     # ==== Modifiers ====  TODO fix so that all new cells are really new (fixes the causality bug).
-    def replace(self, old: CellString, new: CellString, copy_new: bool = True) -> bool:
+    def replace(self, old: Sequence[Cell], new: StateSpace) -> bool:
         """Replace the first occurrence of old with new. Emits a DeltaSet if successful."""
         idx: int = self.find(old)
         if idx == -1:
             return False
-        destroyed = tuple(self.cells[idx:idx + len(old.cells)])
-        self.cells[idx:idx + len(old.cells)] = new.cells
-        created = tuple(new.cells)
-        self.on_change.emit((created, destroyed))
+        destroyed: tuple[Cell, ...] = tuple(self.cells[idx:idx + len(old)])
+        self.cells[idx:idx + len(old)] = new.cells
+        self.on_change.emit((new, destroyed))
         return True
 
-    def insert(self, new: CellString, at_pos: int , copy_new: bool = True) -> bool:
+    def insert(self, new: Sequence[Cell], at_pos: int) -> bool:
         """Insert new at the specified position. Emits a DeltaSet if successful."""
-        if not (0 <= at_pos <= len(self.cells)):
+        if not (0 <= at_pos <= len(self)):
             return False
-        self.cells[at_pos:at_pos] = new.cells
-        created = tuple(new.cells)
-        self.on_change.emit((created, tuple()))
+        self.cells[at_pos:at_pos] = new
+        self.on_change.emit((new, tuple()))
+        return True
+
+    def append(self, new: Sequence[Cell]) -> bool:
+        """Append the last occurrence of self.cells[-1]."""
+        self.cells.extend(new)
+        self.on_change.emit((new, tuple()))
         return True
 
 
@@ -130,9 +151,14 @@ class Rule(ABC):
         self.on_applied: Signal = Signal()  # emitted when a rule is successfully applied.
 
     @abstractmethod
-    def apply(self, to_string: CellString) -> bool:
+    def match(self):
+        """"""
+        pass
+
+    @abstractmethod
+    def apply(self, to_space: StateSpace) -> bool:
         """This should be implemented by subclasses.
-        It should apply the rule to the given ``string: CellString``. Upon success, return true."""
+        It should apply the rule to the given ``space: StateSpace``. Upon success, return true."""
         raise NotImplementedError
 
 
@@ -144,9 +170,14 @@ class RuleSet(ABC):
         self.on_rules_applied: Signal = Signal()
 
     @abstractmethod
-    def apply(self, to_string: CellString) -> list[Rule]:
+    def match(self) -> list[Rule]:
+        """Test"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply(self, to_space: StateSpace) -> list[Rule]:
         """This should be implemented by subclasses.
-        This should try to apply the RuleSet to the given ``string: CellString``.
+        This should try to apply the RuleSet to the given ``space: StateSpace``.
         The rules that have been successfully applied should be returned in a list."""
         raise NotImplementedError
 
@@ -154,6 +185,7 @@ class RuleSet(ABC):
 class Event:
     def __init__(self, step: int):
         self.step: int = step  # also known as time
+        # TODO put states here
 
         # optional metadata for each new event (must be managed by Flow.evolve())
         self.applied_rules: list[Rule] = []  # rules applied at this event
@@ -170,9 +202,9 @@ class Flow:
     """
 
     def __init__(self, rule_set: RuleSet,
-                 initial_state: CellString):
+                 initial_state: StateSpace):
         self.events: list[Event] = [Event(0)]  # time steps
-        self.states: list[CellString] = [initial_state]  # remembered states
+        self.states: list[StateSpace] = [initial_state]  # remembered states
         self.rule_set: RuleSet = rule_set
         self.pending_deltas: list[DeltaSet] = []
 
@@ -183,7 +215,7 @@ class Flow:
         initial_state.on_change.connect(self.on_deltas_detected)
 
     @property
-    def current_state(self) -> CellString:
+    def current_state(self) -> StateSpace:
         return self.states[-1]
 
     @property
@@ -205,7 +237,7 @@ class Flow:
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
         self.events.append(Event(self.current_event.step + 1))
-        self.states.append(self.current_state.new_state())
+        self.states.append(copy(self.current_state))
         self.current_event.applied_rules = self.rule_set.apply(self.current_state)
         if not self.current_event.applied_rules:  # if no rules were applied
             self.current_event.inert = True
