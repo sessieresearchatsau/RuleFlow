@@ -24,8 +24,9 @@ class Signal:
 
 
 class Cell:
-    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using shallow_clone().
+    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
+    It is at this smallest unit of space that we care about causality.
 
     Policies:
     - The Cell class should not contain any fields other than the quanta and the metadata. This is so copies can be made easily.
@@ -50,48 +51,94 @@ class Cell:
 
     def __copy__(self) -> Cell:
         """Copies the Cell (self), but does not copy the quanta itself (it retains the reference to it). It is a shallow copy."""
-        return Cell(self.quanta)  # for now this is all that is necessary for an efficient shallow clone.
+        return Cell(self.quanta)  # for now this is all that is necessary for an efficient shallow clone... metadata is not copied.
 
     def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__ in case the rule programmer is not competent
         return self.__copy__()
 
 
-class CellContainer:
-    """Can be an n dimensional array with generalized modifiers and helpers."""
-    pass
+# Delta type definition for cells in the format (new_cells, destroyed_cells)
+DeltaSet = tuple[Sequence[Cell], Sequence[Cell]]
 
 
-DeltaSet = tuple[Sequence[Cell], Sequence[Cell]]  # in the format (new_cells, destroyed_cells)
-class StateSpace:
-    """Mutable container made up of `Cells` (a.k.a. Universe State).
+class StateSpace(ABC):
+    """Mutable container made up of `Cells` (a.k.a. Universe State of Space).
 
     Policies:
     - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
+    - All modifier methods must make sure to create new cells or cell copies if causality is to be tracked properly using the DeltaSets.
     - All modifier methods (methods that create/destroy cells) should return bool if successful and emit any changes as DeltaSets in the .on_change signal
-
-    TODO:
-    - Flesh out helper methods such __contains__() and others that str has.
-    - What other modifiers should we have?
-
-    Future Considerations:
-    - What about higher dimensions: cells being an N^2 or N^3 state space?
+    - All official StateSpaces must be created in this engine.py file. If one wants to create a 4D StateSpace, for instance, they must inherit from this, implement the methods, etc.
+    - All StateSpaces that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
     """
 
-    def __init__(self, cells: list[Cell]):
-        self.cells: list[Cell] = cells
+    def __init__(self) -> None:
+        if hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
+            raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseStateSpace BEFORE the BaseStateSpace constructor is called.')
 
-        # Signals
+        # Signals (gets propagated throughout the lifetime of the class and all copies)
         self.on_change: Signal = Signal()
 
         # Plugins
         self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
-        self.string_delimiter: str = ''
 
-    def __str__(self):
+    @abstractmethod
+    def __str__(self) -> str:
+        """Returns a string representation of the state space. May use the quanta_str_translator() plugin function is necessary."""
+
+    @abstractmethod
+    def __eq__(self, other: StateSpace) -> bool:
+        """Semantic equality (use `is` for true equality)"""
+
+    @abstractmethod
+    def __len__(self) -> int | Any:
+        """Should return the *size* of a container... whatever that may mean for N^1 or N^2 or N^3 spaces."""
+
+    @abstractmethod
+    def __copy__(self) -> StateSpace | Any:
+        """Copies the StateSpace (self), but does not copy the cells (internal fields) themselves
+        (it only retains references to them). It is a shallow copy.
+        """
+        """
+        Implementation example:
+        ```
+        new_space = object.__new__(self.__class__)  # create new object without using init
+        for k, v in self.__dict__.items():  # copy all fields only once
+            setattr(new_space, k, copy(v) if isinstance(v, list) else v)  # only if the field itself is mutable and must be copied (but not deep copied)
+        return new_space
+        ```
+        """
+
+    @abstractmethod
+    def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell] | Any:
+        """Enables getting subspaces with slicing: space[0][1] of an N^2 space for instance."""
+
+    @abstractmethod
+    def get_all_cells(self) -> Sequence[Cell]:
+        """Returns all the cells that live in the StateSpace... regardless of the spaces dimensions.
+        This is useful for modifying all the cells in the StateSpace."""
+
+    @abstractmethod
+    def find(self, subspace: Cell | Sequence[Cell] | Any, instances: int = 1) -> Sequence[int | Any]:
+        """Find the `instances` number of occurrences of subspaces in the space (in any order desired) and return a
+        sequence of index positions or more complex positions. An empty set is returned if no matches are found.
+        If `instances` is -1, all subspaces should be matched.
+        Note that `instances` are useful for creating multi-way systems for example."""
+
+
+class StateSpace1D(StateSpace):
+    """A StateSpace for a single dimensions (string) of space units (cells)."""
+
+    def __init__(self, cells: list[Cell] | Sequence[Cell] | Any) -> None:
+        self.cells: list[Cell] = cells
+        super().__init__()
+
+        self.string_delimiter: str = ''  # just empty by default.
+
+    def __str__(self) -> str:
         return self.string_delimiter.join([self.quanta_str_translator(c) for c in self.cells])
 
-    def __eq__(self, other: StateSpace):
-        """Semantic equality (use is for true equality)"""
+    def __eq__(self, other: StateSpace1D) -> bool:
         for sc, oc in zip(self.cells, other.cells):
             if sc.quanta != oc.quanta:
                 return False
@@ -100,35 +147,48 @@ class StateSpace:
     def __len__(self) -> int:
         return len(self.cells)
 
-    def __copy__(self) -> StateSpace:
-        """Copies the StateSpace (self), but does not copy the cells themselves (it retains references to them). It is a shallow copy."""
-        new_string: StateSpace = object.__new__(self.__class__)  # create new object without init
+    def __copy__(self) -> StateSpace1D:
+        new_space: StateSpace1D = object.__new__(self.__class__)  # create new object without using init
         for k, v in self.__dict__.items():  # copy all fields only once
-            setattr(new_string, k, copy(v) if isinstance(v, list) else v)
-        return new_string
+            setattr(new_space, k, copy(v) if isinstance(v, list) else v)
+        return new_space
 
-    # ==== Utilities ====
-    def find(self, sub_string: Sequence[Cell]) -> int | None:
-        """Find the first occurrence of sub_string in self.cells and return the starting index, or -1 if not found."""
-        sub_len: int = len(sub_string)
-        for i in range(len(self.cells) - sub_len + 1):
-            if all(self.cells[i + j] == sub_string[j] for j in range(sub_len)):
-                return i
-        return -1
+    def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell]:
+        return self.cells[item]
 
-    # ==== Modifiers ====  TODO fix so that all new cells are really new (fixes the causality bug).
-    def replace(self, old: Sequence[Cell], new: StateSpace) -> bool:
-        """Replace the first occurrence of old with new. Emits a DeltaSet if successful."""
-        idx: int = self.find(old)
-        if idx == -1:
-            return False
-        destroyed: tuple[Cell, ...] = tuple(self.cells[idx:idx + len(old)])
-        self.cells[idx:idx + len(old)] = new.cells
+    def get_all_cells(self) -> Sequence[Cell]:
+        return self.cells
+
+    def find(self, subspace: Sequence[Cell], instances: int = 1) -> list[int]:
+        subspace_len: int = len(subspace)
+        matches: list[int] = []
+        for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
+            if instances == 0:
+                break
+            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len)):
+                matches.append(i)
+            if instances != -1:
+                instances -= 1
+        return matches
+
+    # ==== Modifiers ====
+    def overwrite_at(self, at_pos: int, new: Sequence[Cell]) -> bool:
+        """Overwrite the subspace at `at_pos`. Emits a DeltaSet and returns True if successful."""
+        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(new)])
+        self.cells[at_pos:at_pos + len(new)] = new
         self.on_change.emit((new, destroyed))
         return True
 
+    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> bool:
+        """Replace the first occurrence of old with new. Emits a DeltaSet and returns True if successful."""
+        pos: list[int] = self.find(old, instances=1)
+        if not pos:
+            return False
+        self.overwrite_at(pos[0], new)
+        return True
+
     def insert(self, new: Sequence[Cell], at_pos: int) -> bool:
-        """Insert new at the specified position. Emits a DeltaSet if successful."""
+        """Insert new at the specified position. Emits a DeltaSet and returns True if successful."""
         if not (0 <= at_pos <= len(self)):
             return False
         self.cells[at_pos:at_pos] = new
@@ -136,10 +196,15 @@ class StateSpace:
         return True
 
     def append(self, new: Sequence[Cell]) -> bool:
-        """Append the last occurrence of self.cells[-1]."""
+        """Append the last occurrence of self.cells[-1]. Returns True if successful."""
         self.cells.extend(new)
         self.on_change.emit((new, tuple()))
         return True
+
+
+class StateSpace2D(StateSpace):
+    """It is here that we implement the 2D StateSpace."""
+    pass
 
 
 class Rule(ABC):
@@ -147,19 +212,27 @@ class Rule(ABC):
         """This should be implemented by subclasses.
         It should take arguments that define the rule behavior. For instance, ``SubstitutionRule(match: string, replace: string)`` should be for a rule that finds a matching substring and replaces it.
         ``InsertionRule(insert: string, at_idx: string)`` should be a rule that inserts a string at the specified index. Whatever the init arguments are, they must be created as fields internally in an elegant format.
+
+        The Rule should be responsible for duplicating (or not) the StateSpace when applying itself. This way,
+        multi-way systems are supported because the Rule can apply multiple different modifications to multiple
+        different StateSpaces if necessary.
         """
-        self.on_applied: Signal = Signal()  # emitted when a rule is successfully applied.
+        self.state_space_buffer: list[StateSpace] = []  # this is where modified (and usually new/copied) StateSpaces go after Rule application.
+
+    def flush_state_space_buffer(self) -> Sequence[StateSpace]:
+        """Flush the state space buffer and return the states."""
+        state_spaces: tuple[StateSpace, ...] = tuple(self.state_space_buffer)
+        self.state_space_buffer.clear()
+        return state_spaces
+
+    # @abstractmethod
+    # def match(self) -> bool | int | Any:
+    #     """Should return information about how this rule has been matched: could be a simple bool or a position."""
 
     @abstractmethod
-    def match(self):
-        """"""
-        pass
-
-    @abstractmethod
-    def apply(self, to_space: StateSpace) -> bool:
-        """This should be implemented by subclasses.
-        It should apply the rule to the given ``space: StateSpace``. Upon success, return true."""
-        raise NotImplementedError
+    def apply(self, to_space: Sequence[StateSpace]) -> bool:
+        """Applies the rule to the given ``StateSpace(s)``. Modified StateSpaces go in the ``self.state_space_buffer`` so
+         that Flow can further process the new StateSpaces. Upon successful application, return true."""
 
 
 class RuleSet(ABC):
@@ -167,25 +240,21 @@ class RuleSet(ABC):
         """This should be implemented by subclasses.
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
         self.rules: list[Rule] = []
-        self.on_rules_applied: Signal = Signal()
+
+    # @abstractmethod
+    # def match(self) -> list[Rule]:
+    #     """Returns all the Rules that have been matched, and thus could potentially be applied."""
 
     @abstractmethod
-    def match(self) -> list[Rule]:
-        """Test"""
-        raise NotImplementedError
-
-    @abstractmethod
-    def apply(self, to_space: StateSpace) -> list[Rule]:
-        """This should be implemented by subclasses.
-        This should try to apply the RuleSet to the given ``space: StateSpace``.
-        The rules that have been successfully applied should be returned in a list."""
-        raise NotImplementedError
+    def apply(self, to_space: Sequence[StateSpace]) -> list[Rule]:
+        """This should try to apply the RuleSet to the given ``StateSpace(s)``.
+        The rules that have been successfully applied are returned in a list."""
 
 
 class Event:
     def __init__(self, step: int):
+        self.statespace: list[StateSpace] = []  # these are all the StateSpaces that are a result of a successfully applied rule. Usually, there is only one StateSpace that lives here, but in multi-way systems, multiple StateSpaces live here.
         self.step: int = step  # also known as time
-        # TODO put states here
 
         # optional metadata for each new event (must be managed by Flow.evolve())
         self.applied_rules: list[Rule] = []  # rules applied at this event
@@ -195,35 +264,29 @@ class Event:
 
 
 class Flow:
-    """The base class for a rule flow, additional behavior should be implemented by subclassing this class.
-
-    Future Considerations:
-    - Add a clone() method?
-    """
+    """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     def __init__(self, rule_set: RuleSet,
                  initial_state: StateSpace):
-        self.events: list[Event] = [Event(0)]  # time steps
-        self.states: list[StateSpace] = [initial_state]  # remembered states
+        self.events: list[Event] = [
+            Event(0)
+        ]
         self.rule_set: RuleSet = rule_set
-        self.pending_deltas: list[DeltaSet] = []
+        self.pending_deltas_buffer: list[DeltaSet] = []
 
         # make sure the first state is connected to the creation event.
-        for cell in initial_state.cells:
+        for cell in initial_state.get_all_cells():
             cell.created_at = self.current_event
-        # make sure any deltas are detected
-        initial_state.on_change.connect(self.on_deltas_detected)
 
-    @property
-    def current_state(self) -> StateSpace:
-        return self.states[-1]
+        # make sure all deltas are detected
+        initial_state.on_change.connect(self.on_deltas_detected)
 
     @property
     def current_event(self) -> Event:
         return self.events[-1]
 
     def on_deltas_detected(self, delta: DeltaSet):
-        self.pending_deltas.append(delta)
+        self.pending_deltas_buffer.append(delta)
 
     def evolve(self) -> None:
         """ Evolve the system by one step.
@@ -236,25 +299,34 @@ class Flow:
             - the .apply() function should return the applied rule(s)
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        self.events.append(Event(self.current_event.step + 1))
-        self.states.append(copy(self.current_state))
-        self.current_event.applied_rules = self.rule_set.apply(self.current_state)
+        self.events.append(
+            Event(self.current_event.step + 1)
+        )
+        self.current_event.applied_rules = self.rule_set.apply(self.current_event.statespace)
         if not self.current_event.applied_rules:  # if no rules were applied
             self.current_event.inert = True
             return
-        for delta in self.pending_deltas:
+        for rule in self.current_event.applied_rules:  # process all StateSpaces that Rule created
+            self.current_event.statespace.extend(rule.flush_state_space_buffer())
+        for delta in self.pending_deltas_buffer:
             for new_cell in delta[0]:
                 new_cell.created_at = self.current_event
             for destroyed_cell in delta[1]:
                 destroyed_cell.destroyed_at = self.current_event
                 self.current_event.causally_connected_events.append(destroyed_cell.created_at)
-        self.current_event.affected_cells = self.pending_deltas
-        self.pending_deltas.clear()
+        self.current_event.affected_cells = self.pending_deltas_buffer
+        self.pending_deltas_buffer.clear()
 
     def evolve_n(self, n_steps: int) -> None:
         """Evolve the system n steps."""
         for _ in range(n_steps):
             self.evolve()
+
+    def evolve_until_inert(self, limit_steps: int = 100000) -> None:
+        """Evolve the system until the events become inert. Be """
+        while not self.current_event.inert and limit_steps:
+            self.evolve()
+            limit_steps -= 1
 
     def to_graphviz(self):
         raise NotImplementedError
@@ -263,7 +335,7 @@ class Flow:
         raise NotImplementedError
 
     def __str__(self) -> str:
-        return '\n'.join((str(state) for state in self.states))
+        return '\n'.join((str(event.statespace[0]) for event in self.events if not event.inert))
 
 
 if __name__ == '__main__':
