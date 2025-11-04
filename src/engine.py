@@ -73,7 +73,7 @@ class StateSpace(ABC):
     """
 
     def __init__(self) -> None:
-        if hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
+        if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
             raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseStateSpace BEFORE the BaseStateSpace constructor is called.')
 
         # Signals (gets propagated throughout the lifetime of the class and all copies)
@@ -85,6 +85,10 @@ class StateSpace(ABC):
     @abstractmethod
     def __str__(self) -> str:
         """Returns a string representation of the state space. May use the quanta_str_translator() plugin function is necessary."""
+
+    def __repr__(self):
+        """Simply calls the self.__str__() implementation so that if self is in another container, it will be used by python when printing the container. This can be overridden to change behavior."""
+        return self.__str__()
 
     @abstractmethod
     def __eq__(self, other: StateSpace) -> bool:
@@ -124,6 +128,27 @@ class StateSpace(ABC):
         sequence of index positions or more complex positions. An empty set is returned if no matches are found.
         If `instances` is -1, all subspaces should be matched.
         Note that `instances` are useful for creating multi-way systems for example."""
+
+    # ==== optional unimplemented modifiers ====
+    def replace_at(self, old: Sequence[Cell] | Any, new: Sequence[Cell] | Any, at_pos: int | Any) -> bool:
+        """Replace old with new at a position. Emits a DeltaSet and returns True if successful."""
+        raise NotImplementedError
+
+    def replace(self, old: Sequence[Cell] | Any, new: Sequence[Cell] | Any) -> bool:
+        """Replace the first occurrence of old with new. Emits a DeltaSet and returns True if successful."""
+        raise NotImplementedError
+
+    def overwrite_at(self, at_pos: int | Any, new: Sequence[Cell] | Any) -> bool:
+        """Overwrite the subspace at `at_pos`. Emits a DeltaSet and returns True if successful."""
+        raise NotImplementedError
+
+    def insert(self, new: Sequence[Cell] | Any, at_pos: int | Any) -> bool:
+        """Insert new at the specified position. Emits a DeltaSet and returns True if successful."""
+        raise NotImplementedError
+
+    def append(self, new: Sequence[Cell] | Any) -> bool:
+        """Append the last occurrence of self.cells[-1]. Returns True if successful."""
+        raise NotImplementedError
 
 
 class StateSpace1D(StateSpace):
@@ -172,24 +197,25 @@ class StateSpace1D(StateSpace):
         return matches
 
     # ==== Modifiers ====
+    def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> bool:
+        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos+len(old)])
+        self.cells[at_pos:at_pos+len(old)] = new
+        self.on_change.emit((new, destroyed))
+        return True
+
+    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> bool:
+        pos: list[int] = self.find(old, instances=1)
+        if not pos:
+            return False
+        return self.replace_at(old, new, pos[0])
+
     def overwrite_at(self, at_pos: int, new: Sequence[Cell]) -> bool:
-        """Overwrite the subspace at `at_pos`. Emits a DeltaSet and returns True if successful."""
         destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(new)])
         self.cells[at_pos:at_pos + len(new)] = new
         self.on_change.emit((new, destroyed))
         return True
 
-    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> bool:
-        """Replace the first occurrence of old with new. Emits a DeltaSet and returns True if successful."""
-        # TODO: make sure overwrite works
-        pos: list[int] = self.find(old, instances=1)
-        if not pos:
-            return False
-        self.overwrite_at(pos[0], new)
-        return True
-
     def insert(self, new: Sequence[Cell], at_pos: int) -> bool:
-        """Insert new at the specified position. Emits a DeltaSet and returns True if successful."""
         if not (0 <= at_pos <= len(self)):
             return False
         self.cells[at_pos:at_pos] = new
@@ -197,7 +223,6 @@ class StateSpace1D(StateSpace):
         return True
 
     def append(self, new: Sequence[Cell]) -> bool:
-        """Append the last occurrence of self.cells[-1]. Returns True if successful."""
         self.cells.extend(new)
         self.on_change.emit((new, tuple()))
         return True
@@ -210,55 +235,69 @@ class StateSpace2D(StateSpace):
 
 class Rule(ABC):
     def __init__(self):
-        """This should be implemented by subclasses.
-        It should take arguments that define the rule behavior. For instance, ``SubstitutionRule(match: string, replace: string)`` should be for a rule that finds a matching substring and replaces it.
+        """Should take arguments that define the rule behavior. For instance, ``SubstitutionRule(match: string, replace: string)`` should be for a rule that finds a matching substring and replaces it.
         ``InsertionRule(insert: string, at_idx: string)`` should be a rule that inserts a string at the specified index. Whatever the init arguments are, they must be created as fields internally in an elegant format.
 
-        The Rule should be responsible for duplicating (or not) the StateSpace when applying itself. This way,
+        The Rule should be responsible for duplicating (or not) the StateSpace(s) when applying itself. This way,
         multi-way systems are supported because the Rule can apply multiple different modifications to multiple
         different StateSpaces if necessary.
+
+        Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a StateSpace, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
         """
-        self.state_space_buffer: list[StateSpace] = []  # this is where modified (and usually new/copied) StateSpaces go after Rule application.
-
-    def flush_state_space_buffer(self) -> Sequence[StateSpace]:
-        """Flush the state space buffer and return the states."""
-        state_spaces: tuple[StateSpace, ...] = tuple(self.state_space_buffer)
-        self.state_space_buffer.clear()
-        return state_spaces
-
-    # @abstractmethod
-    # def match(self) -> bool | int | Any:
-    #     """Should return information about how this rule has been matched: could be a simple bool or a position."""
+        # Metadata to modify how RuleSet applies rules. Additional flags for more complex behavior can be added if RuleSet is subclassed and modified for such behavior.
+        self.disabled = False  # in case we want to temporarily disable the rule while the program is running.
+        self.break_RuleSet_application_on_success: bool = True  # this tells RuleSet whether to keep applying rules or not if this rule was successfully applied.
 
     @abstractmethod
-    def apply(self, to_space: Sequence[StateSpace]) -> bool:
-        """Applies the rule to the given ``StateSpace(s)``. Modified StateSpaces go in the ``self.state_space_buffer`` so
-         that Flow can further process the new StateSpaces. Upon successful application, return true."""
+    def apply(self, to_space: Sequence[StateSpace]) -> Sequence[StateSpace]:
+        """Applies the rule to the given ``StateSpace(s)``. Modified StateSpaces are returned.
+        Important for implementation: *new/copied* StateSpaces must be created, modified, and returned.
+        """
+
+    # ==== optional unimplemented methods ====
+    def match(self, *args, **kwargs) -> bool | int | Any:
+        """Should return information about how this rule has been matched: could be a simple bool or a position."""
+        raise NotImplementedError
 
 
-class RuleSet(ABC):
-    def __init__(self):
+class RuleSet:
+    """This contains the Rules that can be applied. Additional, more complex, behavior can be implemented by subclassing it.
+
+    Note that all the code is engineered around assuming multi-way systems for more than one rule being applied.
+    """
+
+    def __init__(self, rules: list[Rule]):
         """This should be implemented by subclasses.
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
-        self.rules: list[Rule] = []
+        self.rules: list[Rule] = rules
 
-    # @abstractmethod
-    # def match(self) -> list[Rule]:
-    #     """Returns all the Rules that have been matched, and thus could potentially be applied."""
+    def apply(self, to_space: Sequence[StateSpace]) -> list[tuple[Rule, Sequence[StateSpace]]]:
+        """The rules that have been successfully applied along with their associated newly created/altered StateSpaces
+        are returned in pairs."""
+        applied_rules: list[tuple[Rule, Sequence[StateSpace]]] = []
+        for rule in self.rules:
+            if rule.disabled:
+                continue
+            created_spaces: Sequence[StateSpace] = rule.apply(to_space)
+            if created_spaces:
+                applied_rules.append((rule, created_spaces))
+                if rule.break_RuleSet_application_on_success:
+                    break
+        return applied_rules
 
-    @abstractmethod
-    def apply(self, to_space: Sequence[StateSpace]) -> list[Rule]:
-        """This should try to apply the RuleSet to the given ``StateSpace(s)``.
-        The rules that have been successfully applied are returned in a list."""
+    # ==== optional unimplemented methods ====
+    def match(self, *args, **kwargs) -> Sequence[Rule]:
+        """Should return information about how this rule has been matched: could be a simple bool or a position."""
+        raise NotImplementedError
 
 
 class Event:
     def __init__(self, step: int):
-        self.statespace: list[StateSpace] = []  # these are all the StateSpaces that are a result of a successfully applied rule. Usually, there is only one StateSpace that lives here, but in multi-way systems, multiple StateSpaces live here.
         self.step: int = step  # also known as time
+        self.statespace: list[StateSpace] = []  # these are all the StateSpaces that are a result of a successfully applied rule. Usually, there is only one StateSpace that lives here, but in multi-way systems, multiple StateSpaces live here.
 
         # optional metadata for each new event (must be managed by Flow.evolve())
-        self.applied_rules: list[Rule] = []  # rules applied at this event
+        self.applied_rules: list[tuple[Rule, Sequence[StateSpace]]] = []  # rules along with the associated StateSpace(s) they created that were applied at this event
         self.affected_cells: list[DeltaSet] = []  # cells affected by this event
         self.causally_connected_events: list[Event] = []  # events whose created cells were destroyed by this event
         self.inert: bool = False  # if true, the new event caused no changes to the system
@@ -268,14 +307,17 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     def __init__(self, rule_set: RuleSet,
-                 initial_state: StateSpace):
+                 initial_state: StateSpace | Sequence[StateSpace]):
         self.events: list[Event] = [
             Event(0)
         ]
         self.rule_set: RuleSet = rule_set
         self.pending_deltas_buffer: list[DeltaSet] = []
 
-        # make sure the first state is connected to the creation event.
+        # make sure the initial space is connected to the creation event.
+        self.current_event.statespace.extend(initial_state if isinstance(initial_state, Sequence) else (initial_state,))
+
+        # make sure the initial cells in the space is connected to the creation event.
         for cell in initial_state.get_all_cells():
             cell.created_at = self.current_event
 
@@ -300,15 +342,18 @@ class Flow:
             - the .apply() function should return the applied rule(s)
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        self.events.append(
-            Event(self.current_event.step + 1)
-        )
-        self.current_event.applied_rules = self.rule_set.apply(self.current_event.statespace)
-        if not self.current_event.applied_rules:  # if no rules were applied
+        applied_rules = self.rule_set.apply(self.current_event.statespace)
+        if not applied_rules:  # if no rules were applied
             self.current_event.inert = True
             return
-        for rule in self.current_event.applied_rules:  # process all StateSpaces that Rule created
-            self.current_event.statespace.extend(rule.flush_state_space_buffer())
+
+        # Create a new event and process it
+        self.events.append(
+            Event(self.current_event.step + 1)  # create a new event
+        )
+        self.current_event.applied_rules = applied_rules
+        for rule in applied_rules:  # process all StateSpaces that Rule created
+            self.current_event.statespace.extend(rule[1])
         for delta in self.pending_deltas_buffer:
             for new_cell in delta[0]:
                 new_cell.created_at = self.current_event
@@ -336,7 +381,7 @@ class Flow:
         raise NotImplementedError
 
     def __str__(self) -> str:
-        return '\n'.join((str(event.statespace[0]) for event in self.events if not event.inert))
+        return '\n'.join((str(event.statespace) for event in self.events))
 
 
 if __name__ == '__main__':
