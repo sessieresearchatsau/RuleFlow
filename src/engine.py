@@ -181,6 +181,7 @@ class StateSpace1D(StateSpace):
 
     def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> bool:
         """Replace the first occurrence of old with new. Emits a DeltaSet and returns True if successful."""
+        # TODO: make sure overwrite works
         pos: list[int] = self.find(old, instances=1)
         if not pos:
             return False
@@ -323,7 +324,7 @@ class Flow:
             self.evolve()
 
     def evolve_until_inert(self, limit_steps: int = 100000) -> None:
-        """Evolve the system until the events become inert. Be """
+        """Evolve the system until the events become inert."""
         while not self.current_event.inert and limit_steps:
             self.evolve()
             limit_steps -= 1
