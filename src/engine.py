@@ -103,15 +103,6 @@ class StateSpace(ABC):
         """Copies the StateSpace (self), but does not copy the cells (internal fields) themselves
         (it only retains references to them). It is a shallow copy.
         """
-        """
-        Implementation example:
-        ```
-        new_space = object.__new__(self.__class__)  # create new object without using init
-        for k, v in self.__dict__.items():  # copy all fields only once
-            setattr(new_space, k, copy(v) if isinstance(v, list) else v)  # only if the field itself is mutable and must be copied (but not deep copied)
-        return new_space
-        ```
-        """
 
     @abstractmethod
     def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell] | Any:

@@ -28,7 +28,7 @@ class MultiwayReplacementRule(RuleABC):
         match, replace = rule_str.split('-->')
         self.match_cells = [Cell(c) for c in match.strip()]
         self.replace_cells = [Cell(c) for c in replace.strip()]
-        self.break_RuleSet_application_on_success = True  # set flags to modify the RuleSet behavior
+        self.break_RuleSet_application_on_success = False  # set flags to modify the RuleSet behavior
 
     def apply(self, to_space: Sequence[StateSpace]) -> tuple[StateSpace, ...]:
         modified_states: tuple[StateSpace, ...] = tuple()
@@ -43,7 +43,7 @@ class MultiwayReplacementRule(RuleABC):
 
 class RuleSet(RuleSetABC):
     def __init__(self, rules: list[str]):
-        super().__init__([ReplacementRule(rule_str) if rule_str == '->' else MultiwayReplacementRule(rule_str) for rule_str in rules])
+        super().__init__([ReplacementRule(rule_str) if '->' in rule_str else MultiwayReplacementRule(rule_str) for rule_str in rules])
 
 
 class SSS(Flow):
@@ -55,6 +55,6 @@ class SSS(Flow):
 
 
 if __name__ == "__main__":
-    sss = SSS(["ABA->AAB", "A-->ABA"], "AB")
-    sss.evolve_n(100)
+    sss = SSS(["ABA->AAB", "A->ABA"], "AB")
+    sss.evolve_n(10)
     print(sss)
