@@ -1,4 +1,4 @@
-from typing import Any, Union, Callable, Sequence
+from typing import Any, Callable, Sequence
 from abc import ABC, abstractmethod
 from copy import copy
 
@@ -61,20 +61,20 @@ class Cell:
 DeltaSet = tuple[Sequence[Cell], Sequence[Cell]]
 
 
-class StateSpace(ABC):
+class SpaceState(ABC):
     """Mutable container made up of `Cells` (a.k.a. Universe State of Space).
 
     Policies:
     - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
     - All modifier methods must make sure to create new cells or cell copies if causality is to be tracked properly using the DeltaSets.
     - All modifier methods (methods that create/destroy cells) should return bool if successful and emit any changes as DeltaSets in the .on_change signal
-    - All official StateSpaces must be created in this engine.py file. If one wants to create a 4D StateSpace, for instance, they must inherit from this, implement the methods, etc.
-    - All StateSpaces that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
+    - All official SpaceStates must be created in this engine.py file. If one wants to create a 4D SpaceState, for instance, they must inherit from this, implement the methods, etc.
+    - All SpaceStates that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
     """
 
     def __init__(self) -> None:
         if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
-            raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseStateSpace BEFORE the BaseStateSpace constructor is called.')
+            raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
         # Signals (gets propagated throughout the lifetime of the class and all copies)
         self.on_change: Signal = Signal()
@@ -91,7 +91,7 @@ class StateSpace(ABC):
         return self.__str__()
 
     @abstractmethod
-    def __eq__(self, other: StateSpace) -> bool:
+    def __eq__(self, other: SpaceState) -> bool:
         """Semantic equality (use `is` for true equality)"""
 
     @abstractmethod
@@ -99,8 +99,8 @@ class StateSpace(ABC):
         """Should return the *size* of a container... whatever that may mean for N^1 or N^2 or N^3 spaces."""
 
     @abstractmethod
-    def __copy__(self) -> StateSpace | Any:
-        """Copies the StateSpace (self), but does not copy the cells (internal fields) themselves
+    def __copy__(self) -> SpaceState | Any:
+        """Copies the SpaceState (self), but does not copy the cells (internal fields) themselves
         (it only retains references to them). It is a shallow copy.
         """
 
@@ -110,8 +110,8 @@ class StateSpace(ABC):
 
     @abstractmethod
     def get_all_cells(self) -> Sequence[Cell]:
-        """Returns all the cells that live in the StateSpace... regardless of the spaces dimensions.
-        This is useful for modifying all the cells in the StateSpace."""
+        """Returns all the cells that live in the SpaceState... regardless of the spaces dimensions.
+        This is useful for modifying all the cells in the SpaceState."""
 
     @abstractmethod
     def find(self, subspace: Cell | Sequence[Cell] | Any, instances: int = 1) -> Sequence[int | Any]:
@@ -142,8 +142,8 @@ class StateSpace(ABC):
         raise NotImplementedError
 
 
-class StateSpace1D(StateSpace):
-    """A StateSpace for a single dimensions (string) of space units (cells)."""
+class SpaceState1D(SpaceState):
+    """A SpaceState for a single dimensions (string) of space units (cells)."""
 
     def __init__(self, cells: list[Cell] | Sequence[Cell] | Any) -> None:
         self.cells: list[Cell] = cells
@@ -154,7 +154,7 @@ class StateSpace1D(StateSpace):
     def __str__(self) -> str:
         return self.string_delimiter.join([self.quanta_str_translator(c) for c in self.cells])
 
-    def __eq__(self, other: StateSpace1D) -> bool:
+    def __eq__(self, other: SpaceState1D) -> bool:
         for sc, oc in zip(self.cells, other.cells):
             if sc.quanta != oc.quanta:
                 return False
@@ -163,8 +163,8 @@ class StateSpace1D(StateSpace):
     def __len__(self) -> int:
         return len(self.cells)
 
-    def __copy__(self) -> StateSpace1D:
-        new_space: StateSpace1D = object.__new__(self.__class__)  # create new object without using init
+    def __copy__(self) -> SpaceState1D:
+        new_space: SpaceState1D = object.__new__(self.__class__)  # create new object without using init
         for k, v in self.__dict__.items():  # copy all fields only once
             setattr(new_space, k, copy(v) if isinstance(v, list) else v)
         return new_space
@@ -189,7 +189,7 @@ class StateSpace1D(StateSpace):
 
     # ==== Modifiers ====
     def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> bool:
-        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos+len(old)])
+        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(old)])
         self.cells[at_pos:at_pos+len(old)] = new
         self.on_change.emit((new, destroyed))
         return True
@@ -219,8 +219,8 @@ class StateSpace1D(StateSpace):
         return True
 
 
-class StateSpace2D(StateSpace):
-    """It is here that we implement the 2D StateSpace."""
+class SpaceState2D(SpaceState):
+    """It is here that we implement the 2D SpaceState."""
     pass
 
 
@@ -229,20 +229,20 @@ class Rule(ABC):
         """Should take arguments that define the rule behavior. For instance, ``SubstitutionRule(match: string, replace: string)`` should be for a rule that finds a matching substring and replaces it.
         ``InsertionRule(insert: string, at_idx: string)`` should be a rule that inserts a string at the specified index. Whatever the init arguments are, they must be created as fields internally in an elegant format.
 
-        The Rule should be responsible for duplicating (or not) the StateSpace(s) when applying itself. This way,
+        The Rule should be responsible for duplicating (or not) the SpaceState(s) when applying itself. This way,
         multi-way systems are supported because the Rule can apply multiple different modifications to multiple
-        different StateSpaces if necessary.
+        different SpaceStates if necessary.
 
-        Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a StateSpace, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
+        Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a SpaceState, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
         """
         # Metadata to modify how RuleSet applies rules. Additional flags for more complex behavior can be added if RuleSet is subclassed and modified for such behavior.
         self.disabled = False  # in case we want to temporarily disable the rule while the program is running.
         self.break_RuleSet_application_on_success: bool = True  # this tells RuleSet whether to keep applying rules or not if this rule was successfully applied.
 
     @abstractmethod
-    def apply(self, to_space: Sequence[StateSpace]) -> Sequence[StateSpace]:
-        """Applies the rule to the given ``StateSpace(s)``. Modified StateSpaces are returned.
-        Important for implementation: *new/copied* StateSpaces must be created, modified, and returned.
+    def apply(self, to_space: Sequence[SpaceState]) -> Sequence[SpaceState]:
+        """Applies the rule to the given ``SpaceState(s)``. Modified SpaceStates are returned.
+        Important for implementation: *new/copied* SpaceStates must be created, modified, and returned.
         """
 
     # ==== optional unimplemented methods ====
@@ -262,14 +262,14 @@ class RuleSet:
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
         self.rules: list[Rule] = rules
 
-    def apply(self, to_space: Sequence[StateSpace]) -> list[tuple[Rule, Sequence[StateSpace]]]:
-        """The rules that have been successfully applied along with their associated newly created/altered StateSpaces
+    def apply(self, to_space: Sequence[SpaceState]) -> list[tuple[Rule, Sequence[SpaceState]]]:
+        """The rules that have been successfully applied along with their associated newly created/altered SpaceStates
         are returned in pairs."""
-        applied_rules: list[tuple[Rule, Sequence[StateSpace]]] = []
+        applied_rules: list[tuple[Rule, Sequence[SpaceState]]] = []
         for rule in self.rules:
             if rule.disabled:
                 continue
-            created_spaces: Sequence[StateSpace] = rule.apply(to_space)
+            created_spaces: Sequence[SpaceState] = rule.apply(to_space)
             if created_spaces:
                 applied_rules.append((rule, created_spaces))
                 if rule.break_RuleSet_application_on_success:
@@ -285,10 +285,11 @@ class RuleSet:
 class Event:
     def __init__(self, step: int):
         self.step: int = step  # also known as time
-        self.statespace: list[StateSpace] = []  # these are all the StateSpaces that are a result of a successfully applied rule. Usually, there is only one StateSpace that lives here, but in multi-way systems, multiple StateSpaces live here.
+        self.space_state: list[SpaceState] = []  # these are all the SpaceStates that are a result of a successfully applied rule. Usually, there is only one SpaceState that lives here, but in multi-way systems, multiple SpaceStates live here.
+        # TODO maybe add unmodified_space_state array?
 
         # optional metadata for each new event (must be managed by Flow.evolve())
-        self.applied_rules: list[tuple[Rule, Sequence[StateSpace]]] = []  # rules along with the associated StateSpace(s) they created that were applied at this event
+        self.applied_rules: list[tuple[Rule, Sequence[SpaceState]]] = []  # rules along with the associated SpaceState(s) they created that were applied at this event
         self.affected_cells: list[DeltaSet] = []  # cells affected by this event
         self.causally_connected_events: list[Event] = []  # events whose created cells were destroyed by this event
         self.inert: bool = False  # if true, the new event caused no changes to the system
@@ -298,7 +299,7 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     def __init__(self, rule_set: RuleSet,
-                 initial_state: StateSpace | Sequence[StateSpace]):
+                 initial_state: SpaceState | Sequence[SpaceState]):
         self.events: list[Event] = [
             Event(0)
         ]
@@ -306,7 +307,7 @@ class Flow:
         self.pending_deltas_buffer: list[DeltaSet] = []
 
         # make sure the initial space is connected to the creation event.
-        self.current_event.statespace.extend(initial_state if isinstance(initial_state, Sequence) else (initial_state,))
+        self.current_event.space_state.extend(initial_state if isinstance(initial_state, Sequence) else (initial_state,))
 
         # make sure the initial cells in the space is connected to the creation event.
         for cell in initial_state.get_all_cells():
@@ -326,14 +327,14 @@ class Flow:
         """ Evolve the system by one step.
 
         This can be reimplemented by subclasses to modify behavior. As it stands, it does the following:
-        - create a new current Event
-        - create new current state
-        - apply ruleset to new current state
-        - Update event and state metadata (important for tracking causality)
-            - the .apply() function should return the applied rule(s)
+        - apply the rules to the current space states using RuleSet.apply()
+        - if a rule was successfully applied, create a new event and increment the time ``step``
+        - Update event and cell metadata (important for tracking causality)
+            - set the applied rules (the applied rules are associated with the space states they modified)
+            - extract all the modified space states from the applied rules and add them to the space states of the Event.
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        applied_rules = self.rule_set.apply(self.current_event.statespace)
+        applied_rules = self.rule_set.apply(self.current_event.space_state)
         if not applied_rules:  # if no rules were applied
             self.current_event.inert = True
             return
@@ -343,8 +344,8 @@ class Flow:
             Event(self.current_event.step + 1)  # create a new event
         )
         self.current_event.applied_rules = applied_rules
-        for rule in applied_rules:  # process all StateSpaces that Rule created
-            self.current_event.statespace.extend(rule[1])
+        for rule in applied_rules:  # process all SpaceStates that Rule created
+            self.current_event.space_state.extend(rule[1])
         for delta in self.pending_deltas_buffer:
             for new_cell in delta[0]:
                 new_cell.created_at = self.current_event
@@ -372,7 +373,7 @@ class Flow:
         raise NotImplementedError
 
     def __str__(self) -> str:
-        return '\n'.join((str(event.statespace) for event in self.events))
+        return '\n'.join((str(event.space_state) for event in self.events))
 
 
 if __name__ == '__main__':
