@@ -12,8 +12,8 @@
   - [Jupyter Notebooks](integrations/notebooks.md)
   - [Wolfram Engine](integrations/wolfram-engine.md)
   - [NetworkX](integrations/networkx.md)
-  - [CellPyLib](integrations/cellpylib.md)
   - [PyVis](integrations/pyvis.md)
+  - [CellPyLib](integrations/cellpylib.md)
 
 - Code Documentation
   - [Project Structure](code-documentation/project-structure.md)
@@ -24,6 +24,7 @@
 
 ---
 
+- [Citing](citation.md)
 - [Contribution Policy](contribution-policy.md)
 - [License](license.md)
 - [Contact](contact.md)

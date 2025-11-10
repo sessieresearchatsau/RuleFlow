@@ -1,6 +1,8 @@
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Sequence, NamedTuple
 from abc import ABC, abstractmethod
-from copy import copy
+from dataclasses import dataclass, field
+from copy import copy, deepcopy
+
 
 # helper
 class Signal:
@@ -22,7 +24,7 @@ class Signal:
         self.callables.remove(func)
         self.callables_count = len(self.callables)
 
-
+@dataclass
 class Cell:
     """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
@@ -32,18 +34,22 @@ class Cell:
     - The Cell class should not contain any fields other than the quanta and the metadata. This is so copies can be made easily.
 
     Future Considerations:
-    - Add additional metadata fields such as tags.
+    - Add additional metadata/tags fields.
     """
-    def __init__(self, quanta: Any):
-        self.quanta: Any = quanta
+    quanta: Any
 
-        # metadata (specific to each Cell instance) (NOTE: this should NOT be copied in copy operations)
-        self.created_at: Event | None = None
-        self.destroyed_at: Event | None = None
+    # NOTE: the metadata is the ONLY thing that makes cells differentiable
+    # metadata (specific to each Cell instance) (NOTE: this should NOT be copied in copy operations)
+    created_at: Event | None = None
+    destroyed_at: Event | None = None
 
     def __str__(self):
         """String representation of quanta"""
         return str(self.quanta)
+
+    def __repr__(self):
+        """Simply calls the self.__str__() implementation so that if self is in another container, it will be used by python when printing the container. This can be overridden to change behavior."""
+        return str(self) # + f'({self.created_at}-{self.destroyed_at})'  # TODO work out the bug that seems to cause created_at+destroyed_at to not be tracked
 
     def __eq__(self, other: Cell):
         """Semantic equality (use is for true equality)"""
@@ -57,17 +63,13 @@ class Cell:
         return self.__copy__()
 
 
-# Delta type definition for cells in the format (new_cells, destroyed_cells)
-DeltaSet = tuple[Sequence[Cell], Sequence[Cell]]
-
-
 class SpaceState(ABC):
     """Mutable container made up of `Cells` (a.k.a. Universe State of Space).
 
     Policies:
     - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
     - All modifier methods must make sure to create new cells or cell copies if causality is to be tracked properly using the DeltaSets.
-    - All modifier methods (methods that create/destroy cells) should return bool if successful and emit any changes as DeltaSets in the .on_change signal
+    - All modifier methods (that create/destroy cells) should return DeltaCellSet containing the destroyed and created cells. The destroyed cells should be cloned/deep-copied before passing to and returning DeltaCellSet... this is so that multiple SpaceState(s) that share the same cells can have different cells destroyed and still track cell causality for each respective universe without overriding the destroyed_at: Event field of the same cell multiple times.
     - All official SpaceStates must be created in this engine.py file. If one wants to create a 4D SpaceState, for instance, they must inherit from this, implement the methods, etc.
     - All SpaceStates that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
     """
@@ -76,8 +78,8 @@ class SpaceState(ABC):
         if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
             raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
-        # Signals (gets propagated throughout the lifetime of the class and all copies)
-        self.on_change: Signal = Signal()
+        # Metadata
+
 
         # Plugins
         self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
@@ -145,7 +147,7 @@ class SpaceState(ABC):
 class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells)."""
 
-    def __init__(self, cells: list[Cell] | Sequence[Cell] | Any) -> None:
+    def __init__(self, cells: Sequence[Cell] | Any) -> None:
         self.cells: list[Cell] = cells
         super().__init__()
 
@@ -188,35 +190,31 @@ class SpaceState1D(SpaceState):
         return matches
 
     # ==== Modifiers ====
-    def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> bool:
+    def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> DeltaCells:
         destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(old)])
         self.cells[at_pos:at_pos+len(old)] = new
-        self.on_change.emit((new, destroyed))
-        return True
+        return DeltaCells(deepcopy(destroyed), new)
 
-    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> bool:
+    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> DeltaCells:
         pos: list[int] = self.find(old, instances=1)
         if not pos:
-            return False
+            return DeltaCells((), ())
         return self.replace_at(old, new, pos[0])
 
-    def overwrite_at(self, at_pos: int, new: Sequence[Cell]) -> bool:
+    def overwrite_at(self, at_pos: int, new: Sequence[Cell]) -> DeltaCells:
         destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(new)])
         self.cells[at_pos:at_pos + len(new)] = new
-        self.on_change.emit((new, destroyed))
-        return True
+        return DeltaCells(deepcopy(destroyed), new)
 
-    def insert(self, new: Sequence[Cell], at_pos: int) -> bool:
+    def insert(self, new: Sequence[Cell], at_pos: int) -> DeltaCells:
         if not (0 <= at_pos <= len(self)):
-            return False
+            return DeltaCells((), ())
         self.cells[at_pos:at_pos] = new
-        self.on_change.emit((new, tuple()))
-        return True
+        return DeltaCells((), new)
 
-    def append(self, new: Sequence[Cell]) -> bool:
+    def append(self, new: Sequence[Cell]) -> DeltaCells:
         self.cells.extend(new)
-        self.on_change.emit((new, tuple()))
-        return True
+        return DeltaCells((), new)
 
 
 class SpaceState2D(SpaceState):
@@ -234,21 +232,50 @@ class Rule(ABC):
         different SpaceStates if necessary.
 
         Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a SpaceState, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
+
+        Future Considerations:
+        - We may want to track more granular information regarding input spaces being associated with the created space so that exact creations and failures could be tracked... we could use a RuleResult dataclass.
         """
-        # Metadata to modify how RuleSet applies rules. Additional flags for more complex behavior can be added if RuleSet is subclassed and modified for such behavior.
+        # Flags to modify how RuleSet applies rules. Additional flags for more complex behavior can be added if RuleSet is subclassed and modified for such behavior.
         self.disabled = False  # in case we want to temporarily disable the rule while the program is running.
         self.break_RuleSet_application_on_success: bool = True  # this tells RuleSet whether to keep applying rules or not if this rule was successfully applied.
 
     @abstractmethod
-    def apply(self, to_space: Sequence[SpaceState]) -> Sequence[SpaceState]:
+    def apply(self, to_spaces: Sequence[SpaceState]) -> Sequence[DeltaSpace]:
         """Applies the rule to the given ``SpaceState(s)``. Modified SpaceStates are returned.
-        Important for implementation: *new/copied* SpaceStates must be created, modified, and returned.
+        Important for implementation: *new/copied* SpaceState(s) must be created, modified, and returned.
+
+        Rule is responsible for taking all current states to provide maximum flexibility (so different rules can have different behavior: sessies + messies) (TRUST ME!!! I doubted my past self on this and then wasted a bunch of time... just keep it as-is you crazy future/modern self!)
         """
 
     # ==== optional unimplemented methods ====
     def match(self, *args, **kwargs) -> bool | int | Any:
         """Should return information about how this rule has been matched: could be a simple bool or a position."""
         raise NotImplementedError
+
+
+class DeltaCells(NamedTuple):  # the cells that were created and destroyed by some SpaceState.modifier() method.
+    destroyed_cells: Sequence[Cell]
+    new_cells: Sequence[Cell]
+
+    def __bool__(self) -> bool:
+        return bool(self.destroyed_cells) or bool(self.new_cells)  # if any changes occurred, return true.
+
+
+class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
+    """Single application of a rule within Rule.apply()."""
+    input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
+    created_space: SpaceState  # will be empty if no changes happened.
+    cell_deltas: DeltaCells
+
+
+class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[AppliedRule]
+    """All delta spaces that happened under a given rule."""
+    space_deltas: Sequence[DeltaSpace]
+    rule: Rule | None
+
+    def __bool__(self) -> bool:
+        return any((bool(d.cell_deltas) for d in self.space_deltas))  # if any changes were recorded.
 
 
 class RuleSet:
@@ -261,19 +288,22 @@ class RuleSet:
         """This should be implemented by subclasses.
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
         self.rules: list[Rule] = rules
+        self.register_unmodified_delta_spaces: bool = False
 
-    def apply(self, to_space: Sequence[SpaceState]) -> list[tuple[Rule, Sequence[SpaceState]]]:
-        """The rules that have been successfully applied along with their associated newly created/altered SpaceStates
-        are returned in pairs."""
-        applied_rules: list[tuple[Rule, Sequence[SpaceState]]] = []
+    def apply(self, to_spaces: Sequence[SpaceState]) -> list[DeltaSpaces]:
+        """Applies the Rules to the given spaces, and returns a sequence of the DeltaSpaceSet."""
+        applied_rules: list[DeltaSpaces] = []
         for rule in self.rules:
             if rule.disabled:
                 continue
-            created_spaces: Sequence[SpaceState] = rule.apply(to_space)
-            if created_spaces:
-                applied_rules.append((rule, created_spaces))
+            space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(to_spaces), rule)
+            if space_deltas:
+                applied_rules.append(space_deltas)
                 if rule.break_RuleSet_application_on_success:
                     break
+            else:
+                if self.register_unmodified_delta_spaces:
+                    applied_rules.append(space_deltas)
         return applied_rules
 
     # ==== optional unimplemented methods ====
@@ -282,17 +312,44 @@ class RuleSet:
         raise NotImplementedError
 
 
+@dataclass
 class Event:
-    def __init__(self, step: int):
-        self.step: int = step  # also known as time
-        self.space_state: list[SpaceState] = []  # these are all the SpaceStates that are a result of a successfully applied rule. Usually, there is only one SpaceState that lives here, but in multi-way systems, multiple SpaceStates live here.
-        # TODO maybe add unmodified_space_state array?
+    step: int  # also known as time
+    space_deltas: list[DeltaSpaces]  # all space deltas organized by the rules they were applied under
 
-        # optional metadata for each new event (must be managed by Flow.evolve())
-        self.applied_rules: list[tuple[Rule, Sequence[SpaceState]]] = []  # rules along with the associated SpaceState(s) they created that were applied at this event
-        self.affected_cells: list[DeltaSet] = []  # cells affected by this event
-        self.causally_connected_events: list[Event] = []  # events whose created cells were destroyed by this event
-        self.inert: bool = False  # if true, the new event caused no changes to the system
+    # metadata
+    causally_connected_events: list[Event] = field(default_factory=list)  # events whose created cells were destroyed by this event
+    inert: bool = False  # if true, the new event caused no changes to the system
+
+    @property  # maybe cache this?
+    def affected_cells(self) -> list[DeltaCells]:
+        """Returns all newly created spaces"""
+        out: list[DeltaCells] = []
+        for r in self.space_deltas:
+            for space_delta in r.space_deltas:
+                if space_delta.cell_deltas:
+                    out.append(space_delta.cell_deltas)
+        return out
+
+    @property  # maybe cache this?
+    def spaces(self) -> list[SpaceState]:
+        """Returns all newly created spaces"""
+        out: list[SpaceState] = []
+        for r in self.space_deltas:
+            for space_delta in r.space_deltas:
+                if space_delta.created_space:
+                    out.append(space_delta.created_space)
+        return out
+
+    @property
+    def unmodified_spaces(self) -> list[SpaceState]:
+        """Returns all unmodified spaces"""
+        out: list[SpaceState] = []
+        for r in self.space_deltas:
+            for space_delta in r.space_deltas:
+                if not space_delta.created_space:
+                    out.append(space_delta.input_space)
+        return out
 
 
 class Flow:
@@ -301,27 +358,19 @@ class Flow:
     def __init__(self, rule_set: RuleSet,
                  initial_state: SpaceState | Sequence[SpaceState]):
         self.events: list[Event] = [
-            Event(0)
+            Event(0, [DeltaSpaces((DeltaSpace(initial_state, initial_state, DeltaCells((), ())),), None)])
         ]
         self.rule_set: RuleSet = rule_set
-        self.pending_deltas_buffer: list[DeltaSet] = []
-
-        # make sure the initial space is connected to the creation event.
-        self.current_event.space_state.extend(initial_state if isinstance(initial_state, Sequence) else (initial_state,))
+        self.use_unmodified_spaces_in_next_event = False
 
         # make sure the initial cells in the space is connected to the creation event.
         for cell in initial_state.get_all_cells():
             cell.created_at = self.current_event
-
-        # make sure all deltas are detected
-        initial_state.on_change.connect(self.on_deltas_detected)
+        print(initial_state.cells)
 
     @property
     def current_event(self) -> Event:
         return self.events[-1]
-
-    def on_deltas_detected(self, delta: DeltaSet):
-        self.pending_deltas_buffer.append(delta)
 
     def evolve(self) -> None:
         """ Evolve the system by one step.
@@ -334,26 +383,22 @@ class Flow:
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        applied_rules = self.rule_set.apply(self.current_event.space_state)
-        if not applied_rules:  # if no rules were applied
+        applied_rules: list[DeltaSpaces] = self.rule_set.apply(self.current_event.spaces + (self.current_event.unmodified_spaces if self.use_unmodified_spaces_in_next_event else []))
+        if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
 
         # Create a new event and process it
         self.events.append(
-            Event(self.current_event.step + 1)  # create a new event
+            Event(self.current_event.step + 1, space_deltas=applied_rules)  # create a new event
         )
-        self.current_event.applied_rules = applied_rules
-        for rule in applied_rules:  # process all SpaceStates that Rule created
-            self.current_event.space_state.extend(rule[1])
-        for delta in self.pending_deltas_buffer:
-            for new_cell in delta[0]:
-                new_cell.created_at = self.current_event
-            for destroyed_cell in delta[1]:
-                destroyed_cell.destroyed_at = self.current_event
-                self.current_event.causally_connected_events.append(destroyed_cell.created_at)
-        self.current_event.affected_cells = self.pending_deltas_buffer
-        self.pending_deltas_buffer.clear()
+        for ar in applied_rules:
+            for sd in ar.space_deltas:
+                for cell in sd.cell_deltas.new_cells:
+                    cell.created_at = self.current_event
+                for cell in sd.cell_deltas.destroyed_cells:
+                    cell.destroyed_at = self.current_event
+                    self.current_event.causally_connected_events.append(cell.created_at)  # TODO right now this is what is happening: causally_connected_events=[None, None]
 
     def evolve_n(self, n_steps: int) -> None:
         """Evolve the system n steps."""
@@ -373,7 +418,7 @@ class Flow:
         raise NotImplementedError
 
     def __str__(self) -> str:
-        return '\n'.join((str(event.space_state) for event in self.events))
+        return '\n'.join((str(event.spaces) for event in self.events))
 
 
 if __name__ == '__main__':
