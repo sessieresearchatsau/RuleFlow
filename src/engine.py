@@ -24,6 +24,10 @@ class Signal:
         self.callables.remove(func)
         self.callables_count = len(self.callables)
 
+
+# ==== engine ====
+
+
 @dataclass
 class Cell:
     """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
@@ -47,19 +51,19 @@ class Cell:
         """String representation of quanta"""
         return str(self.quanta)
 
-    def __repr__(self):
-        """Simply calls the self.__str__() implementation so that if self is in another container, it will be used by python when printing the container. This can be overridden to change behavior."""
-        return str(self) # + f'({self.created_at}-{self.destroyed_at})'  # TODO work out the bug that seems to cause created_at+destroyed_at to not be tracked
-
     def __eq__(self, other: Cell):
         """Semantic equality (use is for true equality)"""
         return self.quanta == other.quanta
 
     def __copy__(self) -> Cell:
         """Copies the Cell (self), but does not copy the quanta itself (it retains the reference to it). It is a shallow copy."""
-        return Cell(self.quanta)  # for now this is all that is necessary for an efficient shallow clone... metadata is not copied.
+        new_cell = object.__new__(self.__class__)
+        new_cell.quanta = self.quanta
+        new_cell.created_at = self.created_at
+        new_cell.destroyed_at = self.destroyed_at
+        return new_cell
 
-    def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__ in case the rule programmer is not competent
+    def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__
         return self.__copy__()
 
 
@@ -78,11 +82,8 @@ class SpaceState(ABC):
         if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
             raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
-        # Metadata
-
-
         # Plugins
-        self.quanta_str_translator: Callable[[Any], str] = lambda q: str(q)
+        self.quanta_str_translator: Callable[[Any], str] = str
 
     @abstractmethod
     def __str__(self) -> str:
@@ -351,6 +352,12 @@ class Event:
                     out.append(space_delta.input_space)
         return out
 
+    def __str__(self):
+        return str(self.step)
+
+    def __repr__(self):
+        return str(self)
+
 
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
@@ -366,7 +373,6 @@ class Flow:
         # make sure the initial cells in the space is connected to the creation event.
         for cell in initial_state.get_all_cells():
             cell.created_at = self.current_event
-        print(initial_state.cells)
 
     @property
     def current_event(self) -> Event:
@@ -398,7 +404,7 @@ class Flow:
                     cell.created_at = self.current_event
                 for cell in sd.cell_deltas.destroyed_cells:
                     cell.destroyed_at = self.current_event
-                    self.current_event.causally_connected_events.append(cell.created_at)  # TODO right now this is what is happening: causally_connected_events=[None, None]
+                    self.current_event.causally_connected_events.append(cell.created_at)
 
     def evolve_n(self, n_steps: int) -> None:
         """Evolve the system n steps."""

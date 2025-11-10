@@ -89,4 +89,4 @@ if __name__ == "__main__":
     sss = SSS(["AB -> BA", "BA -> AB"], "AB")
     sss.evolve_n(1)
     print(sss)
-    print(sss.current_event)
+    print(str(sss.current_event.causally_connected_events))
