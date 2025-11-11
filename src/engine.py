@@ -2,6 +2,7 @@ from typing import Any, Callable, Sequence, NamedTuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from copy import copy, deepcopy
+from graph import CausalityGraph
 
 
 # helper
@@ -381,7 +382,7 @@ class Flow:
 
     TODO:
     - Should we make it possible to have a sliding window over the events to save memory?
-    - Should we re-implement signals (right now they are not being used)
+    - Should we re-implement signals (right now they are not being used)... they could be used as on_new_event to update a dynamic graph visual.
     """
 
     def __init__(self, rule_set: RuleSet,
@@ -437,20 +438,19 @@ class Flow:
         for _ in range(n_steps):
             self.evolve()
 
-    def evolve_until_inert(self, limit_steps: int = 100000) -> None:
+    def evolve_until_inert(self, max_steps: int = 1000) -> None:
         """Evolve the system until the events become inert."""
-        while not self.current_event.inert and limit_steps:
+        while not self.current_event.inert and max_steps:
             self.evolve()
-            limit_steps -= 1
+            max_steps -= 1
 
-    def to_graphviz(self):
-        raise NotImplementedError
-
-    def to_networkx_graph(self):
-        raise NotImplementedError
-
-    def __str__(self) -> str:
+    def __str__(self) -> str:  # TODO: move to Visualizer
         return '\n'.join((f'{event.time} ' + str(event.spaces) + f' {event.causally_connected_events}' for event in self.events))
+
+
+class Visualizer:
+    """Should handle Printing and Visualizing Flows, setting their defaults, etc. This is not to be confused with the Graph Visualizer. This only handles the Flow and internal object display, not graph construction."""
+    pass
 
 
 if __name__ == '__main__':

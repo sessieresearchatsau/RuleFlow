@@ -1,7 +1,14 @@
 """Sequential Substitution System"""
 from typing import Sequence
-from engine import Flow, SpaceState1D as StateSpace, Cell, Rule as RuleABC, RuleSet as RuleSetABC, DeltaSpace
 from copy import deepcopy, copy
+from engine import (
+    Flow,
+    SpaceState1D as StateSpace,
+    Cell,
+    Rule as RuleABC,
+    RuleSet as RuleSetBase,
+    DeltaSpace
+)
 
 
 class Constructor:
@@ -42,7 +49,7 @@ class MultiwayReplacementRule(RuleABC, Constructor):
         return modified_spaces
 
 
-class RuleSet(RuleSetABC):
+class RuleSet(RuleSetBase):
     def __init__(self, rules: list[str | RuleABC]):
         for i in range(len(rules)):
             if not isinstance(rules[i], str): continue
@@ -61,6 +68,6 @@ class SSS(Flow):
 
 
 if __name__ == "__main__":
-    sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(5)
+    sss = SSS(["ABA --> AAB", "A --> ABA"], "AB")
+    sss.evolve_n(10)
     print(sss)
