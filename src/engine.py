@@ -450,7 +450,8 @@ class Flow:
 
 class Visualizer:
     """Should handle Printing and Visualizing Flows, setting their defaults, etc. This is not to be confused with the Graph Visualizer. This only handles the Flow and internal object display, not graph construction."""
-    pass
+    def __init__(self):
+        pass
 
 
 if __name__ == '__main__':
