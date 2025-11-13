@@ -1,7 +1,8 @@
 """Just a showcase of how simple implementation is"""
 from typing import Sequence
 from copy import deepcopy, copy
-from engine import (
+from src.graph import create_causal_graph
+from src.engine import (
     Flow,
     SpaceState1D as StateSpace,
     Cell,
@@ -33,6 +34,10 @@ class SSS(Flow):
 
 
 if __name__ == "__main__":
-    sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(10)
-    print(sss)
+    # sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
+    # sss.evolve_n(10)
+    # create_causal_graph(sss)
+    # print(sss)
+    from implementations import game_of_life
+    from matplotlib import use
+    game_of_life.run_example()

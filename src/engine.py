@@ -2,7 +2,6 @@ from typing import Any, Callable, Sequence, NamedTuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from copy import copy, deepcopy
-from graph import CausalityGraph
 
 
 # helper
@@ -207,7 +206,7 @@ class SpaceState1D(SpaceState):
                     instances -= 1
         return matches
 
-    # ==== Modifiers ====
+    # ==== Custom Modifiers ====
     def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> DeltaCells:
         destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(old)])
         self.cells[at_pos:at_pos + len(old)] = new
@@ -450,7 +449,7 @@ class Flow:
 
 class Visualizer:
     """Should handle Printing and Visualizing Flows, setting their defaults, etc. This is not to be confused with the Graph Visualizer. This only handles the Flow and internal object display, not graph construction."""
-    def __init__(self):
+    def __init__(self, flow: Flow):
         pass
 
 
