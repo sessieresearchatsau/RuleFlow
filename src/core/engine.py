@@ -330,6 +330,7 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Appl
 
 @dataclass
 class Event:
+    # TODO: what about weighted edges?
     time: int  # also known as time
     space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
 
