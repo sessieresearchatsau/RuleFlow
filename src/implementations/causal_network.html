@@ -199,6 +199,9 @@ function highlightFilter(filter) {
             
             
             
+                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.0.0-rc.4/css/tom-select.min.css" integrity="sha512-43fHB3GLgZfz8QXl1RPQ8O66oIgv3po9cJ5erMt1c4QISq9dYb195T3vr5ImnJPXuVroKcGBPXBFKETW8jrPNQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.0.0-rc.4/js/tom-select.complete.js" integrity="sha512-jeF9CfnvzDiw9G9xiksVjxR2lib44Gnovvkv+3CgCG6NXCD4gqlA5nDAVW5WjpA+i+/zKsUWV5xNEbW1X/HH0Q==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
 
         
 <center>
@@ -237,6 +240,12 @@ function highlightFilter(filter) {
              
 
              
+             #config {
+                 float: left;
+                 width: 400px;
+                 height: 600px;
+             }
+             
 
              
         </style>
@@ -246,11 +255,93 @@ function highlightFilter(filter) {
     <body>
         <div class="card" style="width: 100%">
             
+                <div id="select-menu" class="card-header">
+                    <div class="row no-gutters">
+                        <div class="col-10 pb-2">
+                            <select
+                            class="form-select"
+                            aria-label="Default select example"
+                            onchange="selectNode([value]);"
+                            id="select-node"
+                            placeholder="Select node..."
+                            >
+                                <option selected>Select a Node by ID</option>
+                                
+                                    <option value="1">1</option>
+                                
+                                    <option value="2">2</option>
+                                
+                                    <option value="0">0</option>
+                                
+                                    <option value="3">3</option>
+                                
+                                    <option value="5">5</option>
+                                
+                                    <option value="4">4</option>
+                                
+                                    <option value="6">6</option>
+                                
+                                    <option value="8">8</option>
+                                
+                                    <option value="7">7</option>
+                                
+                            </select>
+                        </div>
+                        <div class="col-2 pb-2">
+                            <button type="button" class="btn btn-primary btn-block" onclick="neighbourhoodHighlight({nodes: []});">Reset Selection</button>
+                        </div>
+                    </div>
+                </div>
+            
+            
+              <div id="filter-menu" class="card-header">
+                <div class="row no-gutters">
+                  <div class="col-3 pb-2">
+                    <select
+                            class="form-select"
+                            aria-label="Default select example"
+                            onchange="updateFilter(value, 'item')"
+                            id="select-item"
+                        >
+                        <option value="">Select a network item</option>
+                        <option value="edge">edge</option>
+                        <option value="node">node</option>
+                    </select>
+                  </div>
+                  <div class="col-3 pb-2">
+                    <select
+                            class="form-select"
+                            aria-label="Default select example"
+                            onchange="updateFilter(value, 'property')"
+                            id="select-property"
+                        >
+                        <option value="">Select a property...</option>
+                    </select>
+                  </div>
+                  <div class="col-3 pb-2">
+                    <select
+                            class="form-select"
+                            aria-label="Default select example"
+                            id="select-value"
+                        >
+                        <option value="">Select value(s)...</option>
+                    </select>
+                  </div>
+                  <div class="col-1 pb-2">
+                    <button type="button" class="btn btn-primary btn-block" onclick="highlightFilter(filter);">Filter</button>
+                  </div>
+                  <div class="col-2 pb-2">
+                    <button type="button" class="btn btn-primary btn-block" onclick="clearFilter(true)">Reset Selection</button>
+                  </div>
+                </div>
+              </div>
             
             <div id="mynetwork" class="card-body"></div>
         </div>
 
         
+        
+            <div id="config"></div>
         
 
         <script type="text/javascript">
@@ -272,6 +363,140 @@ function highlightFilter(filter) {
               };
 
               
+                  new TomSelect("#select-node",{
+                      create: false,
+                      sortField: {
+                          field: "text",
+                          direction: "asc"
+                      }
+                  });
+              
+
+              
+                  // explicitly using onItemAdd and this function as we need to save multiple values
+                  let updateValueFilter = function() {
+                      return function () {
+                      filter['value'].push(arguments[0])
+                      }
+                  }
+
+                  let valueControl = new TomSelect("#select-value",{
+                      maxItems: null,
+                      valueField: 'id',
+                      labelField: 'title',
+                      searchField: 'title',
+                      create: false,
+                      sortField: {
+                          field: "text",
+                          direction: "asc"
+                      },
+                      onItemAdd: updateValueFilter()
+                  });
+
+                  let addValues = function() {
+                      return function () {
+                          // clear the current value options and add the selected attribute values
+                          // tom-select handles duplicates
+                          let selectedProperty = arguments[0];
+                          valueControl.clear();
+                          valueControl.clearOptions();
+                          filter['value'] = []
+                          if (filter['item'] === 'node') {
+                              for (let each in allNodes) {
+                                  valueControl.addOption({
+                                      id:allNodes[each][selectedProperty],
+                                      title:allNodes[each][selectedProperty]
+                                  })
+                              }
+                          }
+                          else if (filter['item'] === 'edge') {
+                              for (let each in allEdges) {
+                                  valueControl.addOption({
+                                      id:allEdges[each][selectedProperty],
+                                      title:allEdges[each][selectedProperty]
+                                  })
+                              }
+                          }
+                      }
+                  };
+
+                  let propControl = new TomSelect("#select-property",{
+                      valueField: 'id',
+                      labelField: 'title',
+                      searchField: 'title',
+                      create: false,
+                      sortField: {
+                          field: "text",
+                          direction: "asc"
+                      },
+                      onItemAdd: addValues()
+                  });
+
+                  let addProperties = function() {
+                      return function () {
+                          // loops through the selected network item and adds the attributes to dropdown
+                          // tom-select handles duplicates
+                          clearFilter(false)
+                          if (arguments[0] === 'edge') {
+                              for (let each in allEdges) {
+                                  if (allEdges.hasOwnProperty(each)) {
+                                      for (let eachProp in allEdges[each]) {
+                                          if (allEdges[each].hasOwnProperty(eachProp)) {
+                                              propControl.addOption({id: eachProp, title: eachProp})
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                          else if (arguments[0] === 'node') {
+                              for (let each in allNodes) {
+                                  if (allNodes.hasOwnProperty(each)) {
+                                      for (let eachProp in allNodes[each]) {
+                                          if (allNodes[each].hasOwnProperty(eachProp)
+                                              && (eachProp !== 'hidden' && eachProp !== 'savedLabel'
+                                                  && eachProp !== 'hiddenLabel')) {
+                                              propControl.addOption({id: eachProp, title: eachProp})
+
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  };
+
+                  let itemControl = new TomSelect("#select-item",{
+                      create: false,
+                      sortField:{
+                          field: "text",
+                          direction: "asc"
+                      },
+                      onItemAdd: addProperties()
+                  });
+
+                  function clearFilter(reset) {
+                      // utility function to clear all the selected filter options
+                      // if reset is set to true, the existing filter will be removed
+                      // else, only the dropdown options are cleared
+                      propControl.clear();
+                      propControl.clearOptions();
+                      valueControl.clear();
+                      valueControl.clearOptions();
+                      filter = {
+                          item : '',
+                          property : '',
+                          value : []
+                      }
+                      if (reset) {
+                          itemControl.clear();
+                          filterHighlight({nodes: []})
+                      }
+                  }
+
+                  function updateFilter(value, key) {
+                      // key could be 'item' or 'property' and value is as selected in dropdown
+                      filter[key] = value
+                  }
 
               
 
@@ -282,8 +507,8 @@ function highlightFilter(filter) {
                   
 
                   // parsing and collecting nodes and edges from the python
-                  nodes = new vis.DataSet([{"color": "#97c2fc", "id": 0, "label": "0", "shape": "dot"}, {"color": "#97c2fc", "id": 1, "label": "1", "shape": "dot"}, {"color": "#97c2fc", "id": 2, "label": "2", "shape": "dot"}, {"color": "#97c2fc", "id": 3, "label": "3", "shape": "dot"}, {"color": "#97c2fc", "id": 4, "label": "4", "shape": "dot"}, {"color": "#97c2fc", "id": 5, "label": "5", "shape": "dot"}, {"color": "#97c2fc", "id": 6, "label": "6", "shape": "dot"}, {"color": "#97c2fc", "id": 7, "label": "7", "shape": "dot"}, {"color": "#97c2fc", "id": 8, "label": "8", "shape": "dot"}, {"color": "#97c2fc", "id": 9, "label": "9", "shape": "dot"}, {"color": "#97c2fc", "id": 10, "label": "10", "shape": "dot"}]);
-                  edges = new vis.DataSet([{"arrows": "to", "from": 0, "to": 1}, {"arrows": "to", "from": 1, "to": 2}, {"arrows": "to", "from": 2, "to": 3}, {"arrows": "to", "from": 3, "to": 4}, {"arrows": "to", "from": 2, "to": 5}, {"arrows": "to", "from": 4, "to": 5}, {"arrows": "to", "from": 4, "to": 6}, {"arrows": "to", "from": 6, "to": 7}, {"arrows": "to", "from": 5, "to": 8}, {"arrows": "to", "from": 7, "to": 8}, {"arrows": "to", "from": 8, "to": 9}, {"arrows": "to", "from": 5, "to": 9}, {"arrows": "to", "from": 7, "to": 10}]);
+                  nodes = new vis.DataSet([{"color": "#97c2fc", "id": 1, "label": "1", "shape": "dot", "size": 10, "title": "Distance 1"}, {"color": "#97c2fc", "id": 2, "label": "2", "shape": "dot", "size": 10, "title": "Distance 2"}, {"color": "#97c2fc", "id": 0, "label": 0, "shape": "dot", "size": 10}, {"color": "#97c2fc", "id": 3, "label": "3", "shape": "dot", "size": 10, "title": "Distance 3"}, {"color": "#97c2fc", "id": 5, "label": "5", "shape": "dot", "size": 10, "title": "Distance 3"}, {"color": "#97c2fc", "id": 4, "label": "4", "shape": "dot", "size": 10, "title": "Distance 4"}, {"color": "#97c2fc", "id": 6, "label": "6", "shape": "dot", "size": 10, "title": "Distance 5"}, {"color": "#97c2fc", "id": 8, "label": "8", "shape": "dot", "size": 10, "title": "Distance 4"}, {"color": "#97c2fc", "id": 7, "label": "7", "shape": "dot", "size": 10, "title": "Distance 6"}]);
+                  edges = new vis.DataSet([{"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 0, "to": 1, "width": 1}, {"arrows": "to", "from": 2, "to": 3, "width": 1}, {"arrows": "to", "from": 2, "to": 5, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 6, "width": 1}, {"arrows": "to", "from": 5, "to": 8, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}]);
 
                   nodeColors = {};
                   allNodes = nodes.get({ returnType: "Object" });
@@ -294,17 +519,52 @@ function highlightFilter(filter) {
                   // adding nodes and edges to the graph
                   data = {nodes: nodes, edges: edges};
 
-                  var options = {"physics": {"enabled": true, "hierarchicalRepulsion": {"nodeDistance": 150}}};
+                  var options = {
+    "configure": {
+        "enabled": true,
+        "filter": true
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": true,
+            "type": "dynamic"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
 
                   
 
 
+                  
+                  // if this network requires displaying the configure window,
+                  // put it in its div
+                  options.configure["container"] = document.getElementById("config");
                   
 
                   network = new vis.Network(container, data, options);
 
                   
 
+                  
+                    network.on("selectNode", neighbourhoodHighlight);
                   
 
                   

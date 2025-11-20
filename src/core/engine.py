@@ -337,12 +337,12 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Appl
 
 @dataclass
 class Event:
-    time: int  # also known as time
+    time: int  # also known as time - should be unique to every event
     space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
 
     # metadata
     inert: bool = False  # if true, the new event caused no changes to the system.
-    weight: int | float = 1  # can be used for weighted causality tracking.
+    weight: int | float = 1  # can be used for weighted causality tracking. (think of it as a time multiplier/dilator)
     causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
     @property  # maybe cache this?
@@ -458,14 +458,11 @@ class Flow:
               collapse_causally_connected_events_into_set: bool = False,
               space_idx: int = -1,
               exclude: tuple[str, ...] = None,
-              print_to_terminal: bool = True,
-              ) -> str | None:
+              print_to_terminal: bool = True) -> str | None:
         """Handles printing flows to the terminal or returning in a string. Could be modified to support more modes in the future."""
         def _str_gen(e: Event) -> Generator[str]:
-            if show_time_steps:
-                yield str(e.time)
-            if show_causal_distance_to_creation:
-                yield str(e.causal_distance_to_creation)
+            if show_time_steps: yield str(e.time)
+            if show_causal_distance_to_creation: yield str(e.causal_distance_to_creation)
             if space_idx == -1:
                 yield str(e)
             else:
@@ -474,7 +471,8 @@ class Flow:
                     for _ in range(space_idx): next(s, None)
                 yield str(next(s, None))
             if show_causally_connected_events:
-                yield str(set(e.causally_connected_events) if collapse_causally_connected_events_into_set else tuple(e.causally_connected_events))
+                yield str(set(e.causally_connected_events) if collapse_causally_connected_events_into_set
+                          else tuple(e.causally_connected_events))
         lines: list[str] = []
         if exclude:
             for event in self.events:
