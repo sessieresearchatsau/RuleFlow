@@ -1,5 +1,5 @@
 """Provides all the tools for optimized and rigorous graph analysis."""
-from engine import Flow
+from core.engine import Flow
 
 class Graph:
     @property
@@ -27,12 +27,14 @@ def create_causal_graph(flow: Flow, filename: str = "causal_network.html", colla
       }
     }
     """)
+
     # 1. Add Nodes
     for event in flow.events:
         net.add_node(
             event.time,
             label=str(event.time),
         )
+
     # 2. Add Edges
     for event in flow.events:
         if event.time == 0:  # Skip the initial event (no parents)

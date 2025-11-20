@@ -1,7 +1,7 @@
 """Sequential Substitution System"""
 from typing import Sequence
 from copy import deepcopy, copy
-from src.engine import (
+from core.engine import (
     Flow,
     SpaceState1D as StateSpace,
     Cell,
@@ -69,5 +69,6 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA --> AAB", "A --> ABA"], "AB")
-    sss.evolve_until_inert(100)
-    print(sss)
+    sss.evolve_n(15)
+    string = sss.print(show_causally_connected_events=False,
+                       collapse_causally_connected_events_into_set=True, space_idx=-1, exclude=('None',))

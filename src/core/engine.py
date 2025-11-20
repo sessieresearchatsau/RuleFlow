@@ -1,4 +1,4 @@
-from typing import Any, Callable, Sequence, NamedTuple
+from typing import Any, Callable, Sequence, NamedTuple, Generator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from copy import copy, deepcopy
@@ -47,9 +47,15 @@ class Cell:
     created_at: int | None = None
     destroyed_at: int | None = None
 
+    # extra metadata (useful for weighted causality tracking)
+    weight: float | int = 1
+
     def __str__(self):
         """String representation of quanta"""
         return str(self.quanta)
+
+    def __repr__(self):
+        return repr(self.quanta)
 
     def __eq__(self, other: Cell):
         """Semantic equality (use is for true equality)"""
@@ -82,16 +88,16 @@ class SpaceState(ABC):
         if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
             raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
-        # Plugins
-        self.quanta_str_translator: Callable[[Any], str] = str
+        # metadata
+        self.weight: float | int = 1  # can be used for weighted causality tracking.
 
     @abstractmethod
-    def __str__(self) -> str:
-        """Returns a string representation of the state space. May use the quanta_str_translator() plugin function is necessary."""
+    def __str__(self):
+        """String representation of SpaceState"""
 
+    @abstractmethod
     def __repr__(self):
-        """Simply calls the self.__str__() implementation so that if self is in another container, it will be used by python when printing the container. This can be overridden to change behavior."""
-        return self.__str__()
+        """Repr String representation of SpaceState"""
 
     @abstractmethod
     def __eq__(self, other: SpaceState) -> bool:
@@ -152,10 +158,11 @@ class SpaceState1D(SpaceState):
         self.cells: list[Cell] = cells
         super().__init__()
 
-        self.string_delimiter: str = ''  # just empty by default.
+    def __str__(self):
+        return ''.join((str(c) for c in self.cells))
 
-    def __str__(self) -> str:
-        return self.string_delimiter.join([self.quanta_str_translator(c) for c in self.cells])
+    def __repr__(self):
+        return object.__repr__(self)
 
     def __eq__(self, other: SpaceState1D) -> bool:
         for sc, oc in zip(self.cells, other.cells):
@@ -270,6 +277,7 @@ class Rule(ABC):
         """Should return information about how this rule has been matched: could be a simple bool or a position."""
         raise NotImplementedError
 
+
 class RuleSet:
     """This contains the Rules that can be applied. Additional, more complex, behavior can be implemented by subclassing it.
 
@@ -291,8 +299,7 @@ class RuleSet:
             space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(to_spaces), rule)
             if space_deltas:
                 applied_rules.append(space_deltas)
-                if rule.break_RuleSet_application_on_success:
-                    break
+                if rule.break_RuleSet_application_on_success: break
             else:
                 if self.register_unmodified_delta_spaces:
                     applied_rules.append(space_deltas)
@@ -330,60 +337,51 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Appl
 
 @dataclass
 class Event:
-    # TODO: what about weighted edges?
     time: int  # also known as time
     space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
 
     # metadata
-    inert: bool = False  # if true, the new event caused no changes to the system
+    inert: bool = False  # if true, the new event caused no changes to the system.
+    weight: int | float = 1  # can be used for weighted causality tracking.
+    causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
     @property  # maybe cache this?
-    def causally_connected_events(self) -> list[int]:
-        """Returns events (stored as indices) whose created cells were destroyed by this event"""
-        out: list[int] = []
-        for delta in self.affected_cells:
-            for cell in delta.destroyed_cells:
-                out.append(cell.created_at)
-        return out
-
-    @property  # maybe cache this?
-    def affected_cells(self) -> list[DeltaCells]:
+    def affected_cells(self) -> Generator[DeltaCells]:
         """Returns all cell deltas"""
-        out: list[DeltaCells] = []
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
                 if space_delta.cell_deltas:
-                    out.append(space_delta.cell_deltas)
-        return out
+                    yield space_delta.cell_deltas
 
     @property  # maybe cache this?
-    def spaces(self) -> list[SpaceState]:
+    def causally_connected_events(self) -> Generator[int]:
+        """Returns events (stored as indices) whose created cells were destroyed by this event"""
+        for delta in self.affected_cells:
+            for cell in delta.destroyed_cells:
+                yield cell.created_at
+
+    @property  # maybe cache this?
+    def spaces(self) -> Generator[SpaceState]:
         """Returns all newly created spaces"""
-        out: list[SpaceState] = []
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
                 if space_delta.created_space:
-                    out.append(space_delta.created_space)
-        return out
+                    yield space_delta.created_space
 
     @property
-    def unmodified_spaces(self) -> list[SpaceState]:
+    def unmodified_spaces(self) -> Generator[SpaceState]:
         """Returns all unmodified spaces"""
-        out: list[SpaceState] = []
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
                 if not space_delta.created_space:
-                    out.append(space_delta.input_space)
-        return out
+                    yield space_delta.input_space
+
+    def __str__(self):
+        return '[' + ', '.join((str(space) for space in self.spaces)) + ']'
 
 
 class Flow:
-    """The base class for a rule flow, additional behavior should be implemented by subclassing this class.
-
-    TODO:
-    - Should we make it possible to have a sliding window over the events to save memory?
-    - Should we re-implement signals (right now they are not being used)... they could be used as on_new_event to update a dynamic graph visual.
-    """
+    """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     def __init__(self, rule_set: RuleSet,
                  initial_state: SpaceState | Sequence[SpaceState]):
@@ -416,7 +414,7 @@ class Flow:
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        applied_rules: list[DeltaSpaces] = self.rule_set.apply(self.current_event.spaces + (self.current_event.unmodified_spaces if self.use_unmodified_spaces_in_next_event else []))
+        applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces) + (tuple(self.current_event.unmodified_spaces) if self.use_unmodified_spaces_in_next_event else ()))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
@@ -425,6 +423,8 @@ class Flow:
         self.events.append(
             Event(self.current_event.time + 1, space_deltas=applied_rules)  # create a new event
         )
+
+        # process causality
         current_event_idx: int = self.current_event_idx
         for ar in applied_rules:
             for sd in ar.space_deltas:
@@ -432,6 +432,10 @@ class Flow:
                     cell.created_at = current_event_idx
                 for cell in sd.cell_deltas.destroyed_cells:
                     cell.destroyed_at = current_event_idx
+
+        # process causal distance to creation
+        min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
+        self.current_event.causal_distance_to_creation = min_prev + 1
 
     def evolve_n(self, n_steps: int) -> None:
         """Evolve the system n steps."""
@@ -444,14 +448,45 @@ class Flow:
             self.evolve()
             max_steps -= 1
 
-    def __str__(self) -> str:  # TODO: move to Visualizer
-        return '\n'.join((f'{event.time} ' + str(event.spaces) + f' {event.causally_connected_events}' for event in self.events))
+    def __str__(self) -> str:
+        return self.print(print_to_terminal=False)
 
-
-class Visualizer:
-    """Should handle Printing and Visualizing Flows, setting their defaults, etc. This is not to be confused with the Graph Visualizer. This only handles the Flow and internal object display, not graph construction."""
-    def __init__(self, flow: Flow):
-        pass
+    def print(self,
+              show_time_steps: bool = True,
+              show_causally_connected_events: bool = False,
+              show_causal_distance_to_creation: bool = True,
+              collapse_causally_connected_events_into_set: bool = False,
+              space_idx: int = -1,
+              exclude: tuple[str, ...] = None,
+              print_to_terminal: bool = True,
+              ) -> str | None:
+        """Handles printing flows to the terminal or returning in a string. Could be modified to support more modes in the future."""
+        def _str_gen(e: Event) -> Generator[str]:
+            if show_time_steps:
+                yield str(e.time)
+            if show_causal_distance_to_creation:
+                yield str(e.causal_distance_to_creation)
+            if space_idx == -1:
+                yield str(e)
+            else:
+                s = e.spaces
+                if space_idx > 0:
+                    for _ in range(space_idx): next(s, None)
+                yield str(next(s, None))
+            if show_causally_connected_events:
+                yield str(set(e.causally_connected_events) if collapse_causally_connected_events_into_set else tuple(e.causally_connected_events))
+        lines: list[str] = []
+        if exclude:
+            for event in self.events:
+                l: str = '\t'.join(_str_gen(event))
+                if all((e not in l for e in exclude)): lines.append(l)
+        else:
+            for event in self.events:
+                lines.append('\t'.join(_str_gen(event)))
+        string: str = '\n'.join(lines)
+        if print_to_terminal:
+            print(string)
+        return string
 
 
 if __name__ == '__main__':
