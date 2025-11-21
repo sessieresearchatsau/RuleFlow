@@ -454,7 +454,7 @@ class Flow:
     def print(self,
               show_time_steps: bool = True,
               show_causally_connected_events: bool = False,
-              show_causal_distance_to_creation: bool = True,
+              show_causal_distance_to_creation: bool = False,
               collapse_causally_connected_events_into_set: bool = False,
               space_idx: int = -1,
               exclude: tuple[str, ...] = None,
