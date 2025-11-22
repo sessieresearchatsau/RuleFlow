@@ -67,9 +67,9 @@ class SSS(Flow):
 
 
 if __name__ == "__main__":
-    sss = SSS(["ABA --> AAB", "A --> ABA"], "AB")
-    sss.evolve_n(10)
+    sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
+    sss.evolve_n(20)
     sss.print()
-    from core.graph import CausalityGraph
-    g = CausalityGraph(sss)
-    g.render_in_browser()
+    # from core.graph import CausalGraph
+    # g = CausalGraph(sss)
+    # g.render_in_browser()

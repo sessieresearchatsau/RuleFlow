@@ -240,12 +240,6 @@ function highlightFilter(filter) {
              
 
              
-             #config {
-                 float: left;
-                 width: 400px;
-                 height: 600px;
-             }
-             
 
              
         </style>
@@ -267,11 +261,11 @@ function highlightFilter(filter) {
                             >
                                 <option selected>Select a Node by ID</option>
                                 
+                                    <option value="0">0</option>
+                                
                                     <option value="1">1</option>
                                 
                                     <option value="2">2</option>
-                                
-                                    <option value="0">0</option>
                                 
                                     <option value="3">3</option>
                                 
@@ -283,7 +277,11 @@ function highlightFilter(filter) {
                                 
                                     <option value="8">8</option>
                                 
+                                    <option value="9">9</option>
+                                
                                     <option value="7">7</option>
+                                
+                                    <option value="10">10</option>
                                 
                             </select>
                         </div>
@@ -340,8 +338,6 @@ function highlightFilter(filter) {
         </div>
 
         
-        
-            <div id="config"></div>
         
 
         <script type="text/javascript">
@@ -507,8 +503,8 @@ function highlightFilter(filter) {
                   
 
                   // parsing and collecting nodes and edges from the python
-                  nodes = new vis.DataSet([{"color": "#97c2fc", "id": 1, "label": "1", "shape": "dot", "size": 10, "title": "Distance 1"}, {"color": "#97c2fc", "id": 2, "label": "2", "shape": "dot", "size": 10, "title": "Distance 2"}, {"color": "#97c2fc", "id": 0, "label": 0, "shape": "dot", "size": 10}, {"color": "#97c2fc", "id": 3, "label": "3", "shape": "dot", "size": 10, "title": "Distance 3"}, {"color": "#97c2fc", "id": 5, "label": "5", "shape": "dot", "size": 10, "title": "Distance 3"}, {"color": "#97c2fc", "id": 4, "label": "4", "shape": "dot", "size": 10, "title": "Distance 4"}, {"color": "#97c2fc", "id": 6, "label": "6", "shape": "dot", "size": 10, "title": "Distance 5"}, {"color": "#97c2fc", "id": 8, "label": "8", "shape": "dot", "size": 10, "title": "Distance 4"}, {"color": "#97c2fc", "id": 7, "label": "7", "shape": "dot", "size": 10, "title": "Distance 6"}]);
-                  edges = new vis.DataSet([{"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 0, "to": 1, "width": 1}, {"arrows": "to", "from": 2, "to": 3, "width": 1}, {"arrows": "to", "from": 2, "to": 5, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 6, "width": 1}, {"arrows": "to", "from": 5, "to": 8, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}]);
+                  nodes = new vis.DataSet([{"color": "#97c2fc", "id": 0, "label": "0", "shape": "box", "size": 10, "title": "Causal Distance: 0\nSpace: [AB]"}, {"color": "#97c2fc", "id": 1, "label": "1", "shape": "box", "size": 10, "title": "Causal Distance: 1\nSpace: [ABAB]"}, {"color": "#97c2fc", "id": 2, "label": "2", "shape": "box", "size": 10, "title": "Causal Distance: 2\nSpace: [AABB]"}, {"color": "#97c2fc", "id": 3, "label": "3", "shape": "box", "size": 10, "title": "Causal Distance: 3\nSpace: [ABAABB]"}, {"color": "#97c2fc", "id": 5, "label": "5", "shape": "box", "size": 10, "title": "Causal Distance: 3\nSpace: [AAABBB]"}, {"color": "#97c2fc", "id": 4, "label": "4", "shape": "box", "size": 10, "title": "Causal Distance: 4\nSpace: [AABABB]"}, {"color": "#97c2fc", "id": 6, "label": "6", "shape": "box", "size": 10, "title": "Causal Distance: 5\nSpace: [ABAAABBB]"}, {"color": "#97c2fc", "id": 8, "label": "8", "shape": "box", "size": 10, "title": "Causal Distance: 4\nSpace: [AAABABBB]"}, {"color": "#97c2fc", "id": 9, "label": "9", "shape": "box", "size": 10, "title": "Causal Distance: 4\nSpace: [AAAABBBB]"}, {"color": "#97c2fc", "id": 7, "label": "7", "shape": "box", "size": 10, "title": "Causal Distance: 6\nSpace: [AABAABBB]"}, {"color": "#97c2fc", "id": 10, "label": "10", "shape": "box", "size": 10, "title": "Causal Distance: 7\nSpace: [ABAAAABBBB]"}]);
+                  edges = new vis.DataSet([{"arrows": "to", "from": 0, "to": 1, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 1, "to": 2, "width": 1}, {"arrows": "to", "from": 2, "to": 3, "width": 1}, {"arrows": "to", "from": 2, "to": 5, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 3, "to": 4, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 5, "width": 1}, {"arrows": "to", "from": 4, "to": 6, "width": 1}, {"arrows": "to", "from": 5, "to": 8, "width": 1}, {"arrows": "to", "from": 5, "to": 9, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 6, "to": 7, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}, {"arrows": "to", "from": 7, "to": 8, "width": 1}, {"arrows": "to", "from": 7, "to": 10, "width": 1}, {"arrows": "to", "from": 8, "to": 9, "width": 1}, {"arrows": "to", "from": 8, "to": 9, "width": 1}]);
 
                   nodeColors = {};
                   allNodes = nodes.get({ returnType: "Object" });
@@ -519,44 +515,11 @@ function highlightFilter(filter) {
                   // adding nodes and edges to the graph
                   data = {nodes: nodes, edges: edges};
 
-                  var options = {
-    "configure": {
-        "enabled": true,
-        "filter": true
-    },
-    "edges": {
-        "color": {
-            "inherit": true
-        },
-        "smooth": {
-            "enabled": true,
-            "type": "dynamic"
-        }
-    },
-    "interaction": {
-        "dragNodes": true,
-        "hideEdgesOnDrag": false,
-        "hideNodesOnDrag": false
-    },
-    "physics": {
-        "enabled": true,
-        "stabilization": {
-            "enabled": true,
-            "fit": true,
-            "iterations": 1000,
-            "onlyDynamicEdges": false,
-            "updateInterval": 50
-        }
-    }
-};
+                  var options = {"physics": {"minVelocity": 0.75}, "interaction": {"navigationButtons": true}};
 
                   
 
 
-                  
-                  // if this network requires displaying the configure window,
-                  // put it in its div
-                  options.configure["container"] = document.getElementById("config");
                   
 
                   network = new vis.Network(container, data, options);
