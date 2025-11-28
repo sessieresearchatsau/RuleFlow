@@ -39,6 +39,7 @@ class Cell:
 
     Future Considerations:
     - Add additional metadata/tags fields.
+    - TODO: maybe add modified_at flags (so that swap and insert operations are tracked)?
     """
     quanta: Any
 
@@ -88,9 +89,6 @@ class SpaceState(ABC):
         if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
             raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
-        # metadata
-        self.weight: float | int = 1  # can be used for weighted causality tracking.
-
     @abstractmethod
     def __str__(self):
         """String representation of SpaceState"""
@@ -106,6 +104,10 @@ class SpaceState(ABC):
     @abstractmethod
     def __len__(self) -> int | Any:
         """Should return the *size* of a container... whatever that may mean for N^1 or N^2 or N^3 spaces."""
+
+    @abstractmethod
+    def __bool__(self) -> bool:
+        """Should return the bool state of the space (has any contents)."""
 
     @abstractmethod
     def __copy__(self) -> SpaceState | Any:
@@ -129,27 +131,6 @@ class SpaceState(ABC):
         If `instances` is -1, all subspaces should be matched.
         Note that `instances` are useful for creating multi-way systems for example."""
 
-    # ==== optional unimplemented modifiers ====
-    def replace_at(self, old: Sequence[Cell] | Any, new: Sequence[Cell] | Any, at_pos: int | Any) -> bool:
-        """Replace old with new at a position. Emits a DeltaSet and returns True if successful."""
-        raise NotImplementedError
-
-    def replace(self, old: Sequence[Cell] | Any, new: Sequence[Cell] | Any) -> bool:
-        """Replace the first occurrence of old with new. Emits a DeltaSet and returns True if successful."""
-        raise NotImplementedError
-
-    def overwrite_at(self, at_pos: int | Any, new: Sequence[Cell] | Any) -> bool:
-        """Overwrite the subspace at `at_pos`. Emits a DeltaSet and returns True if successful."""
-        raise NotImplementedError
-
-    def insert(self, new: Sequence[Cell] | Any, at_pos: int | Any) -> bool:
-        """Insert new at the specified position. Emits a DeltaSet and returns True if successful."""
-        raise NotImplementedError
-
-    def append(self, new: Sequence[Cell] | Any) -> bool:
-        """Append the last occurrence of self.cells[-1]. Returns True if successful."""
-        raise NotImplementedError
-
 
 class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells)."""
@@ -172,6 +153,9 @@ class SpaceState1D(SpaceState):
 
     def __len__(self) -> int:
         return len(self.cells)
+
+    def __bool__(self) -> bool:
+        return bool(self.cells)
 
     def __copy__(self) -> SpaceState1D:
         new_space: SpaceState1D = object.__new__(self.__class__)  # create new object without using init
@@ -201,49 +185,111 @@ class SpaceState1D(SpaceState):
     #             instances -= 1
     #     return matches
 
-    def find(self, subspace: Sequence[Cell], instances: int = 1) -> list[int]:
+    def find(self, subspace: Sequence[Cell], instances: int = 1) -> list[tuple[int, int]]:
         subspace_len: int = len(subspace)
-        matches: list[int] = []
+        matches: list[tuple[int, int]] = []
         for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
             if instances == 0:
                 break
             if all(self.cells[i + j] == subspace[j] for j in range(subspace_len)):
-                matches.append(i)
+                matches.append((i, i + subspace_len))
                 if instances != -1:
                     instances -= 1
         return matches
 
+    def regex_find(self):
+        pass  # TODO implement the regex finder
+
     # ==== Custom Modifiers ====
-    def replace_at(self, old: Sequence[Cell], new: Sequence[Cell], at_pos: int) -> DeltaCells:
-        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(old)])
-        self.cells[at_pos:at_pos + len(old)] = new
+    def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCells:
+        start, end = selector
+        destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
+        self.cells[start:end] = new
         return DeltaCells(deepcopy(destroyed), new)
 
-    def replace(self, old: Sequence[Cell], new: Sequence[Cell]) -> DeltaCells:
-        pos: list[int] = self.find(old, instances=1)
-        if not pos:
-            return DeltaCells((), ())
-        return self.replace_at(old, new, pos[0])
+    def insert(self, selector: int, new: Sequence[Cell]) -> DeltaCells:
+        if selector < 0:
+            selector = len(self.cells) + selector + 1
+        self.cells[selector:selector] = new
+        return DeltaCells((), new)
 
-    def overwrite_at(self, at_pos: int, new: Sequence[Cell]) -> DeltaCells:
-        destroyed: tuple[Cell, ...] = tuple(self.cells[at_pos:at_pos + len(new)])
-        self.cells[at_pos:at_pos + len(new)] = new
+    def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCells:
+        destroyed: tuple[Cell, ...] = ()
+        if selector < 0:
+            selector = len(self.cells) + selector
+        for i in range(len(new)):
+            idx = selector + i
+            new_char: Cell = new[i]
+            if new_char.quanta == '_':  # skip these
+                continue
+            try:
+                destroyed += (self.cells[idx],)
+                self.cells[idx] = new[i]
+            except IndexError:
+                self.cells.append(new[i])
         return DeltaCells(deepcopy(destroyed), new)
 
-    def insert(self, new: Sequence[Cell], at_pos: int) -> DeltaCells:
-        if not (0 <= at_pos <= len(self)):
-            return DeltaCells((), ())
-        self.cells[at_pos:at_pos] = new
-        return DeltaCells((), new)
+    def delete(self, selector: tuple[int, int]) -> DeltaCells:
+        start, end = selector
+        destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
+        self.cells[start:end] = ()
+        return DeltaCells(deepcopy(destroyed), ())
 
-    def append(self, new: Sequence[Cell]) -> DeltaCells:
-        self.cells.extend(new)
-        return DeltaCells((), new)
+    def shift(self, selector: tuple[int, int], k: int) -> DeltaCells:
+        start, end = selector
+        if end < 0: end = len(self.cells) + end
+        if start < 0: start = len(self.cells) + start
+        if k == 0:
+            pass
+        elif k < 0:
+            k = abs(k)
+            self.cells[end:end] = self.cells[start - k:start]  # insert "before" to "after"
+            self.cells[start - k:start] = ()  # delete before
+        else:
+            temp = self.cells[end:end + k]  # delete "after" but remember it
+            self.cells[end:end + k] = ()
+            self.cells[start:start] = temp  # insert "after" to "before"
+        return DeltaCells((), ())
+
+    def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCells:
+        start1, end1 = selector1
+        if end1 < 0: end1 = len(self.cells) + end1
+        if start1 < 0: start1 = len(self.cells) + start1
+        start2, end2 = selector2
+        if end2 < 0: end2 = len(self.cells) + end2
+        if start2 < 0: start2 = len(self.cells) + start2
+        if start1 < start2 < end1 or start1 < end2 < end1:
+            raise IndexError('The selector indices cannot overlap!')
+        if abs(start1 - end1) != abs(start2 - end2):
+            raise IndexError('The range for both selectors cannot be different!')
+        self.cells[start1:end1], self.cells[start2:end2] = self.cells[start2:end2], self.cells[start1:end1]
+        return DeltaCells((), ())
+
+    def reverse(self, selector: tuple[int, int]) -> DeltaCells:
+        start, end = selector
+        self.cells[start:end] = self.cells[start:end][::-1]
+        return DeltaCells((), ())
+
 
 
 class SpaceState2D(SpaceState):
-    """It is here that we implement the 2D SpaceState."""
+    """It is here that we implement the 2D SpaceState. Just a placeholder for now."""
     pass
+
+
+class SpaceStateGraph(SpaceState):
+    """It is here that we implement the graph SpaceState. Just a placeholder for now."""
+    pass
+
+
+class RuleMatch(NamedTuple):
+    """An object that represents a rule match. This is returned by Rule.match() and passed to Rule.apply()."""
+    space: SpaceState | SpaceState1D | SpaceState2D | SpaceStateGraph
+    matches: Sequence[tuple[int, int]] | Any  # Any is to support higher dimension matches.
+    conflicts: Sequence[int]  # conflicting matches (idx of the match) that must be resolved.
+
+    def __bool__(self) -> bool:
+        return bool(self.conflicts) or bool(self.matches)
 
 
 class Rule(ABC):
@@ -256,26 +302,30 @@ class Rule(ABC):
         different SpaceStates if necessary.
 
         Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a SpaceState, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
-
-        Future Considerations:
-        - We may want to track more granular information regarding input spaces being associated with the created space so that exact creations and failures could be tracked... we could use a RuleResult dataclass.
         """
-        # Flags to modify how RuleSet applies rules. Additional flags for more complex behavior can be added if RuleSet is subclassed and modified for such behavior.
-        self.disabled = False  # in case we want to temporarily disable the rule while the program is running.
-        self.break_RuleSet_application_on_success: bool = True  # this tells RuleSet whether to keep applying rules or not if this rule was successfully applied.
+        # metadata
+        self.id: str = ''  # could be used to filter rules.
+        self.weight: float | int = 1  # could be used for weighted causality tracking.
+
+        # Flags (these are only those which modify default RuleSet behavior)
+        self.disabled: bool = False  # if the rule is disabled (dead)
+        self.group: int | str = 0  # group together rules this way.
+        self.group_break: bool = True  # break out of the group upon successful application of rule.
+        self.always_apply: bool = False  # always apply this rule no matter what (disregards grouping)
+        # NOTE: any and all additional flags that modify internal rule behavior MUST (for the sake of clarity) be in the implementation of the rule.
 
     @abstractmethod
-    def apply(self, to_spaces: Sequence[SpaceState]) -> Sequence[DeltaSpace]:
+    def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
+        pass
+
+    @abstractmethod
+    def apply(self, matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
         """Applies the rule to the given ``SpaceState(s)``. Modified SpaceStates are returned.
         Important for implementation: *new/copied* SpaceState(s) must be created, modified, and returned.
 
-        Rule is responsible for taking all current states to provide maximum flexibility (so different rules can have different behavior: sessies + messies) (TRUST ME!!! I doubted my past self on this and then wasted a bunch of time... just keep it as-is you crazy future/modern self!)
+        Rule is responsible for taking all current states to provide maximum flexibility (so different rules can have different behavior: sessies + messies) (TRUST ME!!! I doubted my past self on this and then wasted a bunch of time... just keep it as-is you crazy future self!)
         """
-
-    # ==== optional unimplemented methods ====
-    def match(self, *args, **kwargs) -> bool | int | Any:
-        """Should return information about how this rule has been matched: could be a simple bool or a position."""
-        raise NotImplementedError
+        pass
 
 
 class RuleSet:
@@ -288,27 +338,26 @@ class RuleSet:
         """This should be implemented by subclasses.
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
         self.rules: list[Rule] = rules
-        self.register_unmodified_delta_spaces: bool = False
 
     def apply(self, to_spaces: Sequence[SpaceState]) -> list[DeltaSpaces]:
         """Applies the Rules to the given spaces, and returns a sequence of the DeltaSpaceSet."""
+        group_management: dict = {
+            # group IDs go here along with whether they are active - id: bool
+        }
         applied_rules: list[DeltaSpaces] = []
         for rule in self.rules:
             if rule.disabled:
                 continue
-            space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(to_spaces), rule)
-            if space_deltas:
-                applied_rules.append(space_deltas)
-                if rule.break_RuleSet_application_on_success: break
-            else:
-                if self.register_unmodified_delta_spaces:
+            active: bool = group_management.setdefault(rule.group, True)
+            if not active and not rule.always_apply:
+                continue
+            rule_matches: Sequence[RuleMatch] = rule.match(to_spaces)
+            if any(rule_matches):
+                space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(rule_matches), rule)
+                if space_deltas:  # to be robust in case a complex rule still fails (even though input matches were found we can't guarantee that it will always work)
                     applied_rules.append(space_deltas)
+                    if rule.group_break: group_management[rule.group] = False
         return applied_rules
-
-    # ==== optional unimplemented methods ====
-    def match(self, *args, **kwargs) -> Sequence[Rule]:
-        """Should return information about how this rule has been matched: could be a simple bool or a position."""
-        raise NotImplementedError
 
 
 class DeltaCells(NamedTuple):  # the cells that were created and destroyed by some SpaceState.modifier() method.
@@ -322,17 +371,20 @@ class DeltaCells(NamedTuple):  # the cells that were created and destroyed by so
 class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
-    created_space: SpaceState  # will be empty if no changes happened.
+    output_space: SpaceState | None  # will be empty if no changes happened.
     cell_deltas: DeltaCells
 
+    def __bool__(self) -> bool:
+        return bool(self.output_space) or bool(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return the delta cells for some reason?
 
-class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[AppliedRule]
+
+class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
     """All delta spaces that happened under a given rule."""
     space_deltas: Sequence[DeltaSpace]
     rule: Rule | None
 
     def __bool__(self) -> bool:
-        return any((bool(d.cell_deltas) for d in self.space_deltas))  # if any changes were recorded.
+        return any(self.space_deltas)  # if any changes were recorded.
 
 
 @dataclass
@@ -365,15 +417,15 @@ class Event:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                if space_delta.created_space:
-                    yield space_delta.created_space
+                if space_delta.output_space:
+                    yield space_delta.output_space
 
     @property
     def unmodified_spaces(self) -> Generator[SpaceState]:
         """Returns all unmodified spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                if not space_delta.created_space:
+                if not space_delta.output_space:
                     yield space_delta.input_space
 
     def __str__(self):
