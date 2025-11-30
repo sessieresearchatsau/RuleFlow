@@ -21,8 +21,8 @@ class ReplacementRule(RuleABC):
         self.replace_cells = tuple(Cell(c) for c in replace.strip())
         self.break_RuleSet_application_on_success = True
 
-    def apply(self, matches: Sequence[StateSpace]) -> tuple[DeltaSpace]:
-        old_space: StateSpace = matches[0]
+    def apply(self, rule_matches: Sequence[StateSpace]) -> tuple[DeltaSpace]:
+        old_space: StateSpace = rule_matches[0]
         new_space: StateSpace = copy(old_space)
         cell_deltas = new_space.replace(self.match_cells, deepcopy(self.replace_cells))
         return (DeltaSpace(old_space, new_space if cell_deltas else None, cell_deltas),)

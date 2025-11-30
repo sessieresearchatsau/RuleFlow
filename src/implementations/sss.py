@@ -1,5 +1,5 @@
 """Sequential Substitution System"""
-from typing import Sequence
+from typing import Sequence, cast
 from copy import deepcopy, copy
 from core.engine import (
     Flow,
@@ -27,13 +27,13 @@ class ReplacementRule(RuleABC, Constructor):
 
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
         output = ()
-        if matches:=spaces[0].find(self.match_cells, instances=1):
-            output += (RuleMatch(space=spaces[0], matches=matches, conflicts=()),)
+        if matches:=next(spaces[0].find(self.match_cells), None):
+            output += (RuleMatch(space=spaces[0], matches=(matches,), conflicts=()),)
         return output
 
-    def apply(self, matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
-        selector: tuple[int, int] = matches[0].matches[0]
-        old_space: SpaceState = matches[0].space
+    def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
+        selector: tuple[int, int] = rule_matches[0].matches[0]
+        old_space: SpaceState = cast(SpaceState, rule_matches[0].space)  # we cast to satisfy the type checker
         new_space: SpaceState = copy(old_space)
         cell_deltas = new_space.substitute(selector, deepcopy(self.replace_cells))
         return (DeltaSpace(old_space, new_space, cell_deltas),)
@@ -80,7 +80,7 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(10)
+    sss.evolve_n(20)
     sss.print()
     from core.graph import CausalGraph
     g = CausalGraph(sss)

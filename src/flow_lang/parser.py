@@ -24,7 +24,7 @@ grammar: str = r"""
     // Core Instruction Definition (The unit of work)
     // -------------------------------------------------------------------------
     
-    instruction: [selector] operator [selector] [flags]
+    instruction: [selector*] operator [selector] [flags]
 
     // --- Selectors ---
     selector: regex_term
@@ -40,7 +40,6 @@ grammar: str = r"""
 
     // --- Operators ---
     operator: OP_REVERSE
-            | OP_SWAP
             | OP_OVERWRITE
             | OP_DELETE
             | OP_SHIFT_R
@@ -65,7 +64,7 @@ grammar: str = r"""
 
     // 2. Operators (Longer matches first)
     OP_REVERSE:   ">><<"
-    OP_SWAP:      ">-<"
+    OP_REVERSE:   ">><<"
     OP_OVERWRITE: "-->"
     OP_DELETE:    "><"
     OP_SHIFT_R:   ">>"
@@ -150,29 +149,32 @@ class FlowLangTransformer(Transformer):
         return items
 
     def instruction(self, items):
-        return {
+        out = {
             "type": 'instruction',
-            "operator_type": items[1]['type'],
-            "selector": items[0],
-            "operator": items[1]['symbol'],
-            "target": items[2],
-            "flags": _ if (_:=items[3]) else {}
+            "selector": [],
+            "operator": items[-3],
+            "target": items[-2],
+            "flags": _ if (_:=items[-1]) else {}
         }
+        for i in range(len(items) - 3):
+            t: str = items[i]['type']
+            if t == 'selector':
+                out['selector'].append(items[i])
+        return out
 
     def selector(self, items):
         # Unwrap selector child (regex_term, literal_term, etc.)
+        items[0]['selector_type'] = items[0]['type']
+        items[0]['type'] = 'selector'
         return items[0]
 
     def operator(self, items):
         # Unwrap operator
         return {
-            "type": items[0].type,
+            "type": 'operator',
+            "operator_type": items[0].type,
             "symbol": items[0].value
         }
-
-    def target(self, items):
-        # Propagate up
-        return items[0].value
 
     # --- Terminals to Values (Unchanged) ---
     def regex_term(self, items):
@@ -334,12 +336,13 @@ def main():
     
     // Group
     (-group[test]) {
-        [1,2] -> ABB -f[1,2];
+        [1,2] [1, 2] -> ABB -f[1,2];
         a -> b;
     }
     
+    
     // Lone Rule
-    b >><< /[A]+/ -cursor[1, 2];
+    ABB BBA -> CCC;
     """)
     pprint(t)
 

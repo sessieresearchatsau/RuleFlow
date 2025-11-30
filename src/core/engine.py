@@ -1,7 +1,9 @@
-from typing import Any, Callable, Sequence, NamedTuple, Generator
+from typing import Any, Callable, Sequence, NamedTuple, Iterator, Generator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from copy import copy, deepcopy
+import re
+
 
 
 # helper
@@ -125,7 +127,7 @@ class SpaceState(ABC):
         This is useful for modifying all the cells in the SpaceState."""
 
     @abstractmethod
-    def find(self, subspace: Cell | Sequence[Cell] | Any, instances: int = 1) -> Sequence[int | Any]:
+    def find(self, subspace: Cell | Sequence[Cell] | Any) -> Iterator[int | Any]:
         """Find the `instances` number of occurrences of subspaces in the space (in any order desired) and return a
         sequence of index positions or more complex positions. An empty set is returned if no matches are found.
         If `instances` is -1, all subspaces should be matched.
@@ -185,20 +187,17 @@ class SpaceState1D(SpaceState):
     #             instances -= 1
     #     return matches
 
-    def find(self, subspace: Sequence[Cell], instances: int = 1) -> list[tuple[int, int]]:
+    def find(self, subspace: Sequence[Cell]) -> Iterator[tuple[int, int]]:
         subspace_len: int = len(subspace)
-        matches: list[tuple[int, int]] = []
         for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
-            if instances == 0:
-                break
-            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len)):
-                matches.append((i, i + subspace_len))
-                if instances != -1:
-                    instances -= 1
-        return matches
+            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len) if subspace[j].quanta != '_'):
+                yield i, i + subspace_len
 
-    def regex_find(self):
-        pass  # TODO implement the regex finder
+    def regex_find(self, pattern: re.Pattern) -> Iterator[tuple[int, int]]:
+        matches: Iterator[re.Match[str]] = pattern.finditer(
+            ''.join((str(c.quanta) for c in self.cells))
+        )
+        for m in matches: yield m.span()
 
     # ==== Custom Modifiers ====
     def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCells:
@@ -258,18 +257,22 @@ class SpaceState1D(SpaceState):
         start2, end2 = selector2
         if end2 < 0: end2 = len(self.cells) + end2
         if start2 < 0: start2 = len(self.cells) + start2
-        if start1 < start2 < end1 or start1 < end2 < end1:
+        if (start1 < start2 < end1 or start1 < end2 < end1
+                or start2 < start1 < end2 or start2 < end1 < end2):  # we do additional checks to ensure that huge slices are still caught.
             raise IndexError('The selector indices cannot overlap!')
-        if abs(start1 - end1) != abs(start2 - end2):
-            raise IndexError('The range for both selectors cannot be different!')
-        self.cells[start1:end1], self.cells[start2:end2] = self.cells[start2:end2], self.cells[start1:end1]
+        if start2 < start1:
+            start1, start2 = start2, start1
+            end1, end2 = end2, end1
+        temp1 = self.cells[start1:end1]
+        temp2 = self.cells[start2:end2]
+        self.cells[start2:end2] = temp1
+        self.cells[start1:end1] = temp2
         return DeltaCells((), ())
 
     def reverse(self, selector: tuple[int, int]) -> DeltaCells:
         start, end = selector
         self.cells[start:end] = self.cells[start:end][::-1]
         return DeltaCells((), ())
-
 
 
 class SpaceState2D(SpaceState):
@@ -284,9 +287,9 @@ class SpaceStateGraph(SpaceState):
 
 class RuleMatch(NamedTuple):
     """An object that represents a rule match. This is returned by Rule.match() and passed to Rule.apply()."""
-    space: SpaceState | SpaceState1D | SpaceState2D | SpaceStateGraph
+    space: SpaceState
     matches: Sequence[tuple[int, int]] | Any  # Any is to support higher dimension matches.
-    conflicts: Sequence[int]  # conflicting matches (idx of the match) that must be resolved.
+    conflicts: set[int]  # conflicting matches (idx of the match) that must be resolved.
 
     def __bool__(self) -> bool:
         return bool(self.conflicts) or bool(self.matches)
@@ -319,7 +322,7 @@ class Rule(ABC):
         pass
 
     @abstractmethod
-    def apply(self, matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
+    def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
         """Applies the rule to the given ``SpaceState(s)``. Modified SpaceStates are returned.
         Important for implementation: *new/copied* SpaceState(s) must be created, modified, and returned.
 
@@ -398,7 +401,7 @@ class Event:
     causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
     @property  # maybe cache this?
-    def affected_cells(self) -> Generator[DeltaCells]:
+    def affected_cells(self) -> Iterator[DeltaCells]:
         """Returns all cell deltas"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
@@ -406,14 +409,14 @@ class Event:
                     yield space_delta.cell_deltas
 
     @property  # maybe cache this?
-    def causally_connected_events(self) -> Generator[int]:
+    def causally_connected_events(self) -> Iterator[int]:
         """Returns events (stored as indices) whose created cells were destroyed by this event"""
         for delta in self.affected_cells:
             for cell in delta.destroyed_cells:
                 yield cell.created_at
 
     @property  # maybe cache this?
-    def spaces(self) -> Generator[SpaceState]:
+    def spaces(self) -> Iterator[SpaceState]:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
@@ -421,7 +424,7 @@ class Event:
                     yield space_delta.output_space
 
     @property
-    def unmodified_spaces(self) -> Generator[SpaceState]:
+    def unmodified_spaces(self) -> Iterator[SpaceState]:
         """Returns all unmodified spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
@@ -512,7 +515,7 @@ class Flow:
               exclude: tuple[str, ...] = None,
               print_to_terminal: bool = True) -> str | None:
         """Handles printing flows to the terminal or returning in a string. Could be modified to support more modes in the future."""
-        def _str_gen(e: Event) -> Generator[str]:
+        def _str_gen(e: Event) -> Iterator[str]:
             if show_time_steps: yield str(e.time)
             if show_causal_distance_to_creation: yield str(e.causal_distance_to_creation)
             if space_idx == -1:
