@@ -64,7 +64,6 @@ grammar: str = r"""
 
     // 2. Operators (Longer matches first)
     OP_REVERSE:   ">><<"
-    OP_REVERSE:   ">><<"
     OP_OVERWRITE: "-->"
     OP_DELETE:    "><"
     OP_SHIFT_R:   ">>"

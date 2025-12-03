@@ -19,14 +19,7 @@ from implementation import (
 )
 
 
-class FlowLangInterpreter:
-    """
-    Translates the Flow Lang AST (dictionary structure from the parser)
-    into runnable engine objects (Rule, RuleSet, Flow).
-    """
-
-    # Maps DSL operators to the concrete Rule class
-    RULE_MAPPER: Dict[str, Type[BaseRule]] = {
+RULE_MAPPER: Dict[str, Type[BaseRule]] = {
         "->": SubstitutionRule,
         ">": InsertionRule,
         "-->": OverwriteRule,
@@ -34,7 +27,17 @@ class FlowLangInterpreter:
         ">>": ShiftingRule,
         "<<": ShiftingRule,
         ">><<": ReverseRule,
-    }
+}
+
+
+class FlowLangInterpreter:
+    """
+    Translates the Flow Lang AST (dictionary structure from the parser)
+    into runnable engine objects (Rule, RuleSet, Flow).
+    """
+
+    # Maps DSL operators to the concrete Rule class
+
 
     # Maps flag keys to their expected type conversion function
     FLAG_CONVERTERS: Dict[str, Any] = {

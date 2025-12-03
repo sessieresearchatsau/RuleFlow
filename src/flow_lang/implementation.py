@@ -7,7 +7,22 @@ Future Considerations:
 from typing import Sequence, NamedTuple, Literal, cast, Iterator
 from re import Pattern
 from copy import deepcopy, copy
-from math import inf
+
+
+class inf(int):  # TODO: we need to make our own inf object that supports integers.
+    def __add__(self, other):
+        return self
+
+    def __sub__(self, other):
+        return self
+
+    pass
+
+    def __gt__(self, other):
+        return True
+
+    def __lt__(self, other):
+        return False
 
 
 from core.engine import (
@@ -23,6 +38,31 @@ from core.engine import (
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range"]
     selector: Sequence[Cell] | Pattern | tuple[int, int]
+
+
+FLAG_MAPPING: dict[str, str] = {
+    # ==== basic flags ====
+    'd': 'disabled',
+    'g': 'group',
+    'gb': 'group_break',
+    'a': 'always_apply',
+
+    # ==== match() flags ====
+    'sr': 'space_range',
+    'mr': 'match_range',
+    # offset
+    # cmp
+
+    # ==== apply() flags ====
+    'nct': 'no_causality_tracking',
+    'nib': 'no_initial_branch',
+    'pl': 'parallel_processing_limit',
+    'bl': 'branch_limit',
+    'bo': 'branch_origin',
+    # tso
+    # crp
+    'runs': 'lifespan',
+}
 
 
 class BaseRule(RuleABC):
@@ -53,6 +93,9 @@ class BaseRule(RuleABC):
         self.lifespan: float | int = inf  # (really an int, but to support inf, we use float) how many times this rule is allowed to successfully execute. This is the overall effect a rule can have before it dies.
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
+
+    def _flag_mapping(self, attr: str) -> str:
+        pass
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
