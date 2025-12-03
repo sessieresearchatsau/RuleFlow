@@ -1,4 +1,6 @@
 from lark import Lark, Transformer, Token, Tree
+from typing import Iterator
+from numerical_helpers import str_to_num, INF
 import json
 import os
 from pprint import pprint
@@ -60,7 +62,7 @@ grammar: str = r"""
     // 1. Complex Literals
     REGEX_LITERAL: /\/[^\/]+\//
     STRING_LITERAL: /"[^"]+"/
-    RANGE_LITERAL: /\[\s*-?\d*\s*(,\s*-?\d*\s*)?\]/   // Matches [1], [1,2], [1,] or [,2]
+    RANGE_LITERAL: /\[\s*(?:-?\d+|inf|-inf)?\s*(,\s*(?:-?\d+|inf|-inf)?\s*)?\]/   // Matches [1], [1,2], [1,] or [,2]
 
     // 2. Operators (Longer matches first)
     OP_REVERSE:   ">><<"
@@ -85,7 +87,7 @@ grammar: str = r"""
     COMMENT: /\/\/[^\n]*/
     
     // 6. Directives (Example: @Universe: "A(B)A" or @Steps: 100)
-    DIRECTIVE_KEY: /[a-zA-Z][a-zA-Z0-9_.]+/
+    DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
     DIRECTIVE_VALUE: /[^(\);)]+/
     directive: "@" DIRECTIVE_KEY "(" DIRECTIVE_VALUE ");"
     
@@ -159,6 +161,8 @@ class FlowLangTransformer(Transformer):
             t: str = items[i]['type']
             if t == 'selector':
                 out['selector'].append(items[i])
+        if out['operator']['operator_type'] in ('OP_SHIFT_R', 'OP_SHIFT_L'):  # special case for these rules
+            out['target'] = str_to_num(out['target']['value'])
         return out
 
     def selector(self, items):
@@ -188,29 +192,24 @@ class FlowLangTransformer(Transformer):
     def range_term(self, items):
         # Parse [x,y] or [x]
         content = items[0].value[1:-1]  # strip []
+
+        # Helper to convert part to int or None
+        def parse_part(part):
+            p = part.strip()
+            # Lark returns empty strings for missing parts like in [,2]
+            return str_to_num(p) if p else None
+
         parts = content.split(',')
-
-        try:
-            # Helper to convert part to int or None
-            def parse_part(part):
-                p = part.strip()
-                # Lark returns empty strings for missing parts like in [,2]
-                return int(p) if p else None
-
+        if len(parts) == 1:
             start = parse_part(parts[0])
-            end = None
+            end = start
+        else:  # this will be the case: len(parts) == 2
+            start = parse_part(parts[0])
+            end = parse_part(parts[1])
+            if start is None: start = 0
+            if end is None: end = INF
 
-            if len(parts) > 1:
-                end = parse_part(parts[1])
-            elif start is not None:
-                # Case: [x] where it should be treated as [x,x]
-                end = start
-
-        except ValueError:
-            # Handle cases where non-integer is inside range brackets
-            return {"type": "range", "error": "Invalid range format"}
-
-        return {"type": "range", "start": start, "end": end}
+        return {"type": "range", "value": (start, end)}
 
     # --- Flags ---
     def flags(self, items):
@@ -227,34 +226,32 @@ class FlowLangTransformer(Transformer):
     def flag(self, items):
         # Parse the raw flag string "-name[args]"
         raw = items[0].value
-        # Remove leading -
+        # Remove leading "-"
         raw = raw[1:]
 
         # Default value for boolean/unit flags (e.g., -a, -nt)
-        args = True
+        args: bool = True
         name = raw
 
         if '[' in raw and raw.endswith(']'):
             name_part, args_part = raw.split('[', 1)
             name = name_part
-            args_str = args_part[:-1]  # remove trailing ]
-
-            # Split args by comma
-            arg_list = []
+            args_str = args_part[:-1]  # remove trailing "]"
             if args_str:
-                for a in args_str.split(','):
-                    a = a.strip()
-                    # Try to parse as int, otherwise keep as string
+                def parse_part(part) -> int | float | str | None:
+                    p: str = part.strip()
+                    if p == '':
+                        return None
                     try:
-                        if a:  # Ignore empty strings from double commas or leading/trailing comma
-                            arg_list.append(int(a))
+                        return str_to_num(p)
                     except ValueError:
-                        arg_list.append(a)
+                        return p
+                arg_parts = args_str.split(',')
+                if len(arg_parts) == 1:
+                    args: int | float | str = parse_part(arg_parts[0])
+                else:
+                    args: tuple[int | float | str, ...] = tuple((parse_part(p) for p in arg_parts))
 
-            # If the list is empty (e.g., -flag[]), args remains an empty list.
-            args = arg_list
-
-        # Clean up name: remove - (already done) and convert to lowercase if needed
         return {name: args}
 
 
@@ -326,22 +323,17 @@ def main():
     parser = FlowLangParser()
     t = parser.parse("""
     // Directives
-    @Universe.test(ABBB);
+    @Universe.test(123);
     @Test(isaac);
     
     // Global Flags
-    -test[1, 2, 3]
-    -flow
+    -test[, 1.5, 3, AB]
+    -test2
+    -test3[1.2]
     
-    // Group
-    (-group[test]) {
-        [1,2] [1, 2] -> ABB -f[1,2];
-        a -> b;
-    }
-    
-    
-    // Lone Rule
-    ABB BBA -> CCC;
+    ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
+    ABB ><;
+    ABB >> 3;
     """)
     pprint(t)
 

@@ -1,6 +1,6 @@
 // Directives
-@Universe.test(ABBB);
-@Test("asdf");
+@Isaac(123);
+@Include.t("sss");
 
 // Global Flags
 -test[1, 2, 3]
@@ -8,7 +8,7 @@
 
 // Group
 (-group[test]) {
-    [1, 2] -> ABB -f[1,2];
+    [1] -> ABB -f[1,2];
     [1, 2] -> b;
 }
 

@@ -2,29 +2,12 @@
 
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
-- TODO: maybe make a CompositeRule object for rule merger directives to construct (defined in then Future Directives section of the Language Specification).
+- Maybe make a CompositeRule object for rule merger directives to construct (outlined in then Future Directives section of the Language Specification).
 """
-from typing import Sequence, NamedTuple, Literal, cast, Iterator
+from typing import Sequence, NamedTuple, Literal, cast, Iterator, Any, Callable
 from re import Pattern
 from copy import deepcopy, copy
-
-
-class inf(int):  # TODO: we need to make our own inf object that supports integers.
-    def __add__(self, other):
-        return self
-
-    def __sub__(self, other):
-        return self
-
-    pass
-
-    def __gt__(self, other):
-        return True
-
-    def __lt__(self, other):
-        return False
-
-
+from numerical_helpers import INF
 from core.engine import (
     SpaceState1D as SpaceState,
     Cell,
@@ -40,32 +23,31 @@ class Selector(NamedTuple):
     selector: Sequence[Cell] | Pattern | tuple[int, int]
 
 
-FLAG_MAPPING: dict[str, str] = {
-    # ==== basic flags ====
-    'd': 'disabled',
-    'g': 'group',
-    'gb': 'group_break',
-    'a': 'always_apply',
-
-    # ==== match() flags ====
-    'sr': 'space_range',
-    'mr': 'match_range',
-    # offset
-    # cmp
-
-    # ==== apply() flags ====
-    'nct': 'no_causality_tracking',
-    'nib': 'no_initial_branch',
-    'pl': 'parallel_processing_limit',
-    'bl': 'branch_limit',
-    'bo': 'branch_origin',
-    # tso
-    # crp
-    'runs': 'lifespan',
-}
-
-
 class BaseRule(RuleABC):
+    FLAG_ALIAS: dict[str, str] = {
+        # ==== basic flags ====
+        'd': 'disabled',
+        'g': 'group',
+        'gb': 'group_break',
+        'a': 'always_apply',
+
+        # ==== match() flags ====
+        'sr': 'space_range',
+        'mr': 'match_range',
+        # offset
+        # cmp
+
+        # ==== apply() flags ====
+        'nct': 'no_causality_tracking',
+        'nib': 'no_initial_branch',
+        'pl': 'parallel_processing_limit',
+        'bl': 'branch_limit',
+        'bo': 'branch_origin',
+        # tso
+        # crp
+        'runs': 'lifespan',
+    }
+
     def __init__(self, selector: Sequence[Selector], target: Selector | int | None):
         super().__init__()
         # Functionality Fields
@@ -73,24 +55,29 @@ class BaseRule(RuleABC):
         self.target: Selector | int | None = target  # used by self.apply()  # Selector is for most operations, Int for operations such as shifting, and None for operations such as delete.
 
         # ==== Flags (that modify the internal rule behavior) ====
-        # NOTE we use floats to support inf
         # match() flags
         self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int, int] = (0, 1, 1)  # the range of matches if there are multiple matches. Step can determine order.
-        self.offset: int | None = None  # the offset to index the selectors return.
+        self.offset: int = 0  # the offset to index the selectors return.
         self.cmp: Literal["both", "og", "this", "ignore"] = "this"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
-        self.parallel_processing_limit: float | int = 1  # parallel processing limit (how many times the rule can be applied per run without breaking into another branch).
-        self.branch_limit: float | int = 0  # branch limit per run (how many branches can be created).
+        self.parallel_processing_limit: int = 1  # parallel processing limit (how many times the rule can be applied per run without breaking into another branch).
+        self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
         self.branch_origin: Literal["origin", "current"] = 'origin'
         self.tso: Literal["origin", "current"] = 'origin'  # target selector origin. If the target involves a selector, choose where to pull characters from. To keep causality clean, the selected cells are always copied as new cells.
         self.crp: Literal["branch", "branch_nbl", "skip", "break", "ignore"] = "ignore"  # conflict resolution protocol. Note: at some point this could be extended to exclude BOTH conflicts, not just the one conflicting with the other.
 
         # rule life flags
-        self.lifespan: float | int = inf  # (really an int, but to support inf, we use float) how many times this rule is allowed to successfully execute. This is the overall effect a rule can have before it dies.
+        self.lifespan: int = INF  # how many times this rule is allowed to be successfully applied. This is the overall effect a rule can have before it dies.
+
+        # stochastic flags
+        self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every run.
+        self.p_match: int | None = None  # smallest level of granularity in probability... the following progress to larger levels.
+        self.p_space: int | None = None
+        self.p_run: int | None = None
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
@@ -175,7 +162,7 @@ class BaseRule(RuleABC):
                 target: Sequence[Cell] | int | None = None
                 if isinstance(self.target, int):
                     target = self.target
-                elif isinstance(self.target, Selector) and (t:=self.target):
+                elif isinstance(t:=self.target, Selector):
                     if t.type == 'literal':
                         target = t.selector
                     elif t.type in ('regex', 'range'):
@@ -260,3 +247,7 @@ class ShiftingRule(BaseRule):
 class ReverseRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCells:
         return space.reverse(selector)
+
+
+if __name__ == "__main__":
+    pass
