@@ -1,0 +1,16 @@
+// Directives
+@Universe.test(ABBB);
+@Test("asdf");
+
+// Global Flags
+-test[1, 2, 3]
+-flow
+
+// Group
+(-group[test]) {
+    [1, 2] -> ABB -f[1,2];
+    [1, 2] -> b;
+}
+
+// Lone Rule
+"Any repetition at the end of the sequence of more than four characters" >><< /[A]+/ -cursor[1, 2];
