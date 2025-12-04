@@ -1,103 +1,5 @@
-from lark import Lark, Transformer, Token, Tree
-from typing import Iterator
+from lark import Lark, Transformer, Tree
 from numerical_helpers import str_to_num, INF
-import json
-import os
-from pprint import pprint
-
-
-grammar: str = r"""
-    start: (global_flags | block | instruction_sequence | directive | COMMENT)*
-    
-    // -------------------------------------------------------------------------
-    // Top-Level Structure (The file is a sequence of these elements)
-    // -------------------------------------------------------------------------
-    
-    // A statement for global flags, appearing alone (e.g., -ncd)
-    global_flags: flags
-    
-    // A instruction block: (-flags) { sequence of instructions... }
-    block: "(" flag+ ")" "{" instruction_sequence "}"
-    
-    // Rules inside a group block (must end with a semicolon)
-    instruction_sequence: (instruction ";")+
-
-    // -------------------------------------------------------------------------
-    // Core Instruction Definition (The unit of work)
-    // -------------------------------------------------------------------------
-    
-    instruction: [selector*] operator [selector] [flags]
-
-    // --- Selectors ---
-    selector: regex_term
-            | llm_term
-            | range_term
-            | literal_term
-
-    // We define these as specific terminals to prevent ambiguity
-    regex_term: REGEX_LITERAL
-    llm_term: STRING_LITERAL
-    range_term: RANGE_LITERAL
-    literal_term: SIMPLE_LITERAL
-
-    // --- Operators ---
-    operator: OP_REVERSE
-            | OP_OVERWRITE
-            | OP_DELETE
-            | OP_SHIFT_R
-            | OP_SHIFT_L
-            | OP_SUB
-            | OP_INSERT
-    
-    // --- Flags ---
-    flags: flag+
-    flag: FLAG_DEF
-
-    // -------------------------------------------------------------------------
-    // Terminals (Lexer Rules)
-    // -------------------------------------------------------------------------
-
-    // Priority: Higher priority tokens are matched first.
-
-    // 1. Complex Literals
-    REGEX_LITERAL: /\/[^\/]+\//
-    STRING_LITERAL: /"[^"]+"/
-    RANGE_LITERAL: /\[\s*(?:-?\d+|inf|-inf)?\s*(,\s*(?:-?\d+|inf|-inf)?\s*)?\]/   // Matches [1], [1,2], [1,] or [,2]
-
-    // 2. Operators (Longer matches first)
-    OP_REVERSE:   ">><<"
-    OP_OVERWRITE: "-->"
-    OP_DELETE:    "><"
-    OP_SHIFT_R:   ">>"
-    OP_SHIFT_L:   "<<"
-    OP_SUB:       "->"
-    OP_INSERT:    ">"
-    
-
-    // 3. Flags
-    FLAG_DEF: /-[a-zA-Z][a-zA-Z0-9_]*(\[[^\]]*\])?/
-    
-    // 4. Identifiers & Targets (Simplified to ensure no conflict with flags/operators)
-    SIMPLE_LITERAL: /[a-zA-Z0-9_]+/
-    
-    // 5. Structural Tokens
-    %import common.SIGNED_INT  // can import other similar standards
-    %import common.WS
-    %import common.NEWLINE
-    COMMENT: /\/\/[^\n]*/
-    
-    // 6. Directives (Example: @Universe: "A(B)A" or @Steps: 100)
-    DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
-    DIRECTIVE_VALUE: /[^(\);)]+/
-    directive: "@" DIRECTIVE_KEY "(" DIRECTIVE_VALUE ");"
-    
-    // -------------------------------------------------------------------------
-    // Ignore Rules
-    // -------------------------------------------------------------------------
-    %ignore WS
-    %ignore NEWLINE
-    %ignore COMMENT
-"""
 
 
 class FlowLangTransformer(Transformer):
@@ -105,6 +7,21 @@ class FlowLangTransformer(Transformer):
     Transforms the Lark AST for Flow Lang into a structured Python dictionary,
     handling directives, global flags, rule groups (by distributing flags), and individual instructions.
     """
+
+    # helper
+    @staticmethod
+    def parse_part(part) -> int | float | str | bool | None:
+        p: str = part.strip()
+        if p == '':
+            return None
+        elif p == 'true':
+            return True
+        elif p == 'false':
+            return False
+        try:
+            return str_to_num(p)
+        except ValueError:
+            return p
 
     def start(self, items):
         """
@@ -129,10 +46,14 @@ class FlowLangTransformer(Transformer):
         }
 
     def directive(self, items):
+        if items[1]:  # detect None for directives such as `@Test.me()` with no arguments
+            value: tuple = tuple((self.parse_part(p) for p in items[1].value.split(',')))  # parse the args
+        else:
+            value: tuple = ()
         return [{
             'type': 'directive',
             'key': items[0].value,
-            'value': items[1].value,
+            'value': value
         }]
 
     def global_flags(self, items):
@@ -161,8 +82,8 @@ class FlowLangTransformer(Transformer):
             t: str = items[i]['type']
             if t == 'selector':
                 out['selector'].append(items[i])
-        if out['operator']['operator_type'] in ('OP_SHIFT_R', 'OP_SHIFT_L'):  # special case for these rules
-            out['target'] = str_to_num(out['target']['value'])
+        if (op_type:=out['operator']['operator_type']) in ('OP_SHIFT_R', 'OP_SHIFT_L'):  # special case for these rules
+            out['target'] = str_to_num(out['target']['value']) * (-1 if op_type == 'OP_SHIFT_L' else 1)
         return out
 
     def selector(self, items):
@@ -238,118 +159,40 @@ class FlowLangTransformer(Transformer):
             name = name_part
             args_str = args_part[:-1]  # remove trailing "]"
             if args_str:
-                def parse_part(part) -> int | float | str | None:
-                    p: str = part.strip()
-                    if p == '':
-                        return None
-                    try:
-                        return str_to_num(p)
-                    except ValueError:
-                        return p
                 arg_parts = args_str.split(',')
                 if len(arg_parts) == 1:
-                    args: int | float | str = parse_part(arg_parts[0])
+                    args: int | float | str = self.parse_part(arg_parts[0])
                 else:
-                    args: tuple[int | float | str, ...] = tuple((parse_part(p) for p in arg_parts))
+                    args: tuple[int | float | str, ...] = tuple((self.parse_part(p) for p in arg_parts))
 
         return {name: args}
 
 
-class FlowLangParser:
-    def __init__(self, use_transformer: bool = True):
-        """Builds the parser.
-
-        TODO: add cache option to skip building on every run...
-        """
-
-        self._flow_parser = Lark(grammar, parser='lalr', transformer=FlowLangTransformer() if use_transformer else None)
-
-    def parse(self, text) -> dict | Tree:
-        try:
-            return self._flow_parser.parse(text)
-        except Exception as e:
-            raise e
-            return {"error": str(e), "input": text}
-
-
-def main():
-    # The test cases provided in the prompt
-    expr_list = [
-        # Basic substitution
-        "AB -> ABB",
-        "AB -> ABB",
-        "/A+B/ -> A",
-
-        # Insertion
-        "[0] > XYZ",
-        "/B/ > C",
-        "[3,5] > DEF",
-
-        # Overwrite
-        "AB --> CD",
-        "/[0-9]+/ --> NUM",
-        "[1,4] --> XXXX",
-
-        # Deletion
-        "AB ><",
-        "/C+/ ><",
-        "[2,] ><",
-
-        # Shifting
-        "AB >> 2",
-        "AB << 1",
-        "/D/ >> 3",
-
-        # Using flags
-        "AB -> ABB -nt",
-        "/X+/ -> Y -nb",
-        "AB -> ABB -bl[2,5]",
-        "AB -> ABB -el[1,3]",
-        "AB -> ABB -runs[10]",
-        "AB -> ABB -o[left_to_right]",
-        "AB -> ABB -a",
-        "AB -> ABB -g[2]",
-
-        # LLM selector
-        "\"match all vowels\" -> V",
-        "\"find repeating substrings\" --> REP",
-
-        # Complex combinations
-        "/A+/ -> AA -bl[,2] -el[1,4]",
-        "[0,3] >> 1 -runs[5]",
-        "\"digits at end\" >< -nb",
-    ]
-
-    parser = FlowLangParser()
-    t = parser.parse("""
-    // Directives
-    @Universe.test(123);
-    @Test(isaac);
-    
-    // Global Flags
-    -test[, 1.5, 3, AB]
-    -test2
-    -test3[1.2]
-    
-    ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
-    ABB ><;
-    ABB >> 3;
-    """)
-    pprint(t)
-
-    # # for expr in ('[1, 3] -> ABB -isaac',):
-    # # for expr in expr_list:
-    # for expr in (input() for _ in range(100)):
-    #     result = parser.parse(expr)
-    #     pprint(result)
-    #     # # Taking the first result since we parse line by line here
-    #     # if isinstance(result, list):
-    #     #     result = result[0]
-    #     #
-    #     # print(f"Expr: {expr}")
-    #     # print(json.dumps(result, indent=2))
-    #     # print("-" * 40)
+def FlowLangParser(use_transformer: bool = True) -> Lark:
+    """Creates the Lark parser object from which .parse(text) can be called."""
+    return Lark.open(
+        grammar_filename='./grammar.lark',
+        parser='lalr',
+        transformer=FlowLangTransformer() if use_transformer else None
+    )
 
 
 if __name__ == "__main__":
-    main()
+    # example (different rules can be added to ensure correct parsing):
+    from pprint import pprint
+    parser = FlowLangParser()
+    t = parser.parse("""
+    // Directives
+    @Universe.test(=, 2);
+    @Test(test);
+
+    // Global Flags
+    -test[, 1.5, 3, AB, false]
+    -test2
+    -test3[1.2]
+
+    ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
+    ABB ><;
+    ABB << 3;
+    """)
+    pprint(t)

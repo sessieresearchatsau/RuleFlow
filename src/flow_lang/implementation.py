@@ -14,7 +14,8 @@ from core.engine import (
     Rule as RuleABC,
     RuleMatch,
     DeltaSpace,
-    DeltaCells
+    DeltaCells,
+    Signal
 )
 
 
@@ -45,7 +46,7 @@ class BaseRule(RuleABC):
         'bo': 'branch_origin',
         # tso
         # crp
-        'runs': 'lifespan',
+        'life': 'lifespan',
     }
 
     def __init__(self, selector: Sequence[Selector], target: Selector | int | None):
@@ -54,7 +55,8 @@ class BaseRule(RuleABC):
         self.selectors: Sequence[Selector] = selector  # used by self.match()
         self.target: Selector | int | None = target  # used by self.apply()  # Selector is for most operations, Int for operations such as shifting, and None for operations such as delete.
 
-        # ==== Flags (that modify the internal rule behavior) ====
+
+        # ======== Flags (that modify the internal rule behavior) ========
         # match() flags
         self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int, int] = (0, 1, 1)  # the range of matches if there are multiple matches. Step can determine order.
@@ -64,7 +66,7 @@ class BaseRule(RuleABC):
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
-        self.parallel_processing_limit: int = 1  # parallel processing limit (how many times the rule can be applied per run without breaking into another branch).
+        self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
         self.branch_origin: Literal["origin", "current"] = 'origin'
         self.tso: Literal["origin", "current"] = 'origin'  # target selector origin. If the target involves a selector, choose where to pull characters from. To keep causality clean, the selected cells are always copied as new cells.
@@ -74,15 +76,21 @@ class BaseRule(RuleABC):
         self.lifespan: int = INF  # how many times this rule is allowed to be successfully applied. This is the overall effect a rule can have before it dies.
 
         # stochastic flags
-        self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every run.
-        self.p_match: int | None = None  # smallest level of granularity in probability... the following progress to larger levels.
-        self.p_space: int | None = None
-        self.p_run: int | None = None
+        self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every time.
+        self.p_match: int | None = None  # probability that a match will be counted
+        self.p_space: int | None = None  # probability that a space will be selected
+        self.p_apply: int | None = None  # probability that a rule will apply() at all.
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
-    def _flag_mapping(self, attr: str) -> str:
-        pass
+
+        # ======== Signals ========
+        # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
+        self.on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces is passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
+        # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
+        self.on_execution: Signal = Signal()
+        self.on_branch: Signal = Signal()
+        self.on_conflict: Signal = Signal()
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
@@ -157,7 +165,7 @@ class BaseRule(RuleABC):
             cell_deltas: list[DeltaCells] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
             pl: int = 0  # parallel executions
             bl: int = self.branch_limit  # branch executions
-            for idx, selector in enumerate(rule_match.matches):
+            for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
                 # make sure the target is in a correct form for all rules (Sequence[Cell] for rewriting or inserting, None for deleting or reversing, and int for shifting)
                 target: Sequence[Cell] | int | None = None
                 if isinstance(self.target, int):
@@ -174,7 +182,8 @@ class BaseRule(RuleABC):
                         target = origin_space[span[0]:span[1]]
 
                 # handle the selector if it is a conflict
-                if self.parallel_processing_limit > 0 and self.crp != 'ignore' and idx in rule_match.conflicts:
+                if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
+                    self.on_conflict.emit(rule_match, idx)
                     if self.crp in ('branch', 'branch_nbl'):
                         branch: SpaceState = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
                         dc: DeltaCells = self._call_space_modifier(branch, selector, target)
@@ -196,7 +205,7 @@ class BaseRule(RuleABC):
                 pl += 1  # increment the parallel execution tracker
 
                 # if pl is at max, submit modified space
-                if pl == self.parallel_processing_limit:  # if parallel execution limit is reached.
+                if pl == self.parallel_execution_limit:  # if parallel execution limit is reached.
                     modified_spaces.append(DeltaSpace(
                         input_space=old_space,
                         output_space=current_space,
@@ -204,11 +213,13 @@ class BaseRule(RuleABC):
                     ))
                     pl = 0
                     cell_deltas.clear()
+                    self.on_execution.emit(rule_match, idx)
 
                     # set the new current space
                     if bl != 0:
                         current_space = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
                         bl -= 1
+                        self.on_branch.emit(rule_match, idx)
                     else:
                         break  # break out of loop if no branches are supposed to be made.
 
@@ -216,6 +227,7 @@ class BaseRule(RuleABC):
         self.lifespan -= 1  # will not affect infinity if so set
         if self.lifespan == 0 and modified_spaces:
             self.disabled = True
+        self.on_applied.emit(modified_spaces)
         return modified_spaces
 
 

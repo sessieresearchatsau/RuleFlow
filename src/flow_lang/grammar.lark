@@ -1,0 +1,90 @@
+start: (global_flags | block | instruction_sequence | directive | COMMENT)*
+
+// -------------------------------------------------------------------------
+// Top-Level Structure (The file is a sequence of these elements)
+// -------------------------------------------------------------------------
+
+// A statement for global flags, appearing alone (e.g., -ncd)
+global_flags: flags
+
+// A instruction block: (-flags) { sequence of instructions... }
+block: "(" flag+ ")" "{" instruction_sequence "}"
+
+// Rules inside a group block (must end with a semicolon)
+instruction_sequence: (instruction ";")+
+
+// -------------------------------------------------------------------------
+// Core Instruction Definition (The unit of work)
+// -------------------------------------------------------------------------
+
+instruction: [selector*] operator [selector] [flags]
+
+// --- Selectors ---
+selector: regex_term
+        | llm_term
+        | range_term
+        | literal_term
+
+// We define these as specific terminals to prevent ambiguity
+regex_term: REGEX_LITERAL
+llm_term: STRING_LITERAL
+range_term: RANGE_LITERAL
+literal_term: SIMPLE_LITERAL
+
+// --- Operators ---
+operator: OP_REVERSE
+        | OP_OVERWRITE
+        | OP_DELETE
+        | OP_SHIFT_R
+        | OP_SHIFT_L
+        | OP_SUB
+        | OP_INSERT
+
+// --- Flags ---
+flags: flag+
+flag: FLAG_DEF
+
+// -------------------------------------------------------------------------
+// Terminals (Lexer Rules)
+// -------------------------------------------------------------------------
+
+// Priority: Higher priority tokens are matched first.
+
+// 1. Complex Literals
+REGEX_LITERAL: /\/[^\/]+\//
+STRING_LITERAL: /"[^"]+"/
+RANGE_LITERAL: /\[\s*(?:-?\d+|inf|-inf)?\s*(,\s*(?:-?\d+|inf|-inf)?\s*)?\]/   // Matches [1], [1,2], [1,] or [,2]
+
+// 2. Operators (Longer matches first)
+OP_REVERSE:   ">><<"
+OP_OVERWRITE: "-->"
+OP_DELETE:    "><"
+OP_SHIFT_R:   ">>"
+OP_SHIFT_L:   "<<"
+OP_SUB:       "->"
+OP_INSERT:    ">"
+
+
+// 3. Flags
+FLAG_DEF: /-[a-zA-Z][a-zA-Z0-9_]*(\[[^\]]*\])?/
+
+// 4. Identifiers & Targets (Simplified to ensure no conflict with flags/operators)
+SIMPLE_LITERAL: /[a-zA-Z0-9_]+/
+
+// 5. Structural Tokens
+%import common.SIGNED_INT  // can import other similar standards
+%import common.WS
+%import common.NEWLINE
+COMMENT: /\/\/[^\n]*/
+
+// 6. Directives (Example: @Universe: "A(B)A" or @Steps: 100)
+DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
+DIRECTIVE_VALUE: /[^(\);)]+/
+directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
+
+// -------------------------------------------------------------------------
+// Ignore Rules
+// -------------------------------------------------------------------------
+%ignore WS
+%ignore NEWLINE
+%ignore COMMENT

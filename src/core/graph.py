@@ -9,7 +9,8 @@ class CausalGraph(MultiDiGraph):
         super().__init__()
         self.flow: Flow = flow
 
-        # TODO - maybe add option to collapse edges
+        # TODO - maybe add option to collapse edges.
+        # TODO: make it so that it can be dynamically adjusted as Flow evolves.
         # construct causal graph - because each node is literally the time, and thus index, it can be used to query to the actual event for more granular information.
         for event in flow.events:
             # if event.time == 0: continue  # Skip the initial event (no parents)

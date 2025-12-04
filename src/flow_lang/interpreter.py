@@ -1,10 +1,3 @@
-"""  TODO: work here 👈👈👈
-- Take the AST and construct rulesets.
-    - define rules.
-        - change rules by adding a find(selector) method to match positions and the apply(matches).
-    - modify ruleset behavior
-    - construct the rules.
-"""
 from typing import Any, Type, Iterator
 import re
 
@@ -86,6 +79,53 @@ def interpret_instructions(instructions: list[dict], global_flags: dict[str, Any
         yield rule_instance
 
 
-def interpret_directives(objects: list[object], directives: dict[str, Any]) -> None:
-    """Use the directives to modify (call) the `objects`. The provided objects can be functions or objects on which the directives are applied."""
-    pass
+def interpret_directives(objects: list[Any], directives: dict[str, Any]) -> None:
+    """
+    Use the directives to modify (call) the `objects`.
+
+    Args:
+        objects: A list of objects. Each object MUST have a `__name__` attribute
+                 to be indexed in the lookup dictionary.
+        directives: A dict where keys are paths (e.g. 'Universe.test') and values
+                    are arguments or assignments (prefixed with '=').
+    """
+    object_map = {obj.__name__: obj for obj in objects if hasattr(obj, "__name__")}
+    for path, args in directives.items():
+        parts = path.split('.')
+        root_name = parts[0]
+        root_obj = object_map.get(root_name)
+        if not root_obj:
+            print(f"Warning: Object '{root_name}' not found in object map.")
+            continue
+
+
+        current_obj = root_obj
+        parent_obj = None  # we must keep track of this in case we want to assign to the attribute.
+        target_attr_name = parts[-1]
+        try:
+            for part in parts[1:]:
+                parent_obj = current_obj
+                current_obj = getattr(current_obj, part)
+        except AttributeError:
+            # noinspection PyUnboundLocalVariable
+            print(f"Error: Could not traverse '{part}' in path '{path}'.")
+            continue
+
+        if len(args) > 1 and args[0] == '=':
+            # Assignment Logic
+            val_to_assign = args[1:]
+            if len(val_to_assign) == 1:
+                val_to_assign = val_to_assign[0]
+            if parent_obj:
+                try:
+                    setattr(parent_obj, target_attr_name, val_to_assign)
+                except AttributeError:
+                    print(f"Error: Cannot set attribute on {parent_obj}.")
+            else:
+                print(f"Warning: Cannot assign value directly to root object '{root_name}'.")
+        else:
+            # Function Call Logic
+            if callable(current_obj):
+                current_obj(*args)
+            else:
+                print(f"Error: '{path}' is not callable.")
