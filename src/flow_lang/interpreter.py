@@ -1,5 +1,6 @@
 from typing import Any, Type, Iterator, Sequence, cast
 import re
+from llm_module import LLMSelector
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
@@ -21,7 +22,7 @@ RULE_MAPPER: dict[str, Type[BaseRule]] = {
 }
 
 
-def interpret_selector(selector_data: dict[str, Any]) -> Selector:
+def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector | None = None) -> Selector:
     """Converts AST selector data into a clean Selector NamedTuple."""
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
@@ -31,14 +32,14 @@ def interpret_selector(selector_data: dict[str, Any]) -> Selector:
         return Selector(type=s_type, selector=re.compile(s_value))
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
-    elif s_type == "llm_prompt":
+    elif s_type == "llm_prompt" and llm_selector:
         # TODO: Add LLM prompt handling here when ready (returns a prompt string)
-        re_pattern: re.Pattern = re.compile('llm result')
+        re_pattern: re.Pattern = re.compile(llm_selector.prompt(s_value))
         return Selector(type='regex', selector=re_pattern)
     raise ValueError(f"Unknown selector type: {s_type}")
 
 
-def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any]) -> Iterator[BaseRule]:
+def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], llm_selector: LLMSelector) -> Iterator[BaseRule]:
     """
     Iterates over the flat list of instructions, instantiates the correct
     Rule subclass, merges flags, and initializes fields.
@@ -54,13 +55,13 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
         if not instruction['selector']:
             print(f'Warning: All rules must have a selector. Skipping rule.')
             continue
-        selectors = [interpret_selector(sd) for sd in instruction['selector']]
+        selectors = [interpret_selector(sd, llm_selector) for sd in instruction['selector']]
 
         # The target may be a selector dict, an int (for shifting), or None (for deleting)
         target_data = instruction.get('target')
         target = None
         if isinstance(target_data, dict):
-            target = interpret_selector(target_data)
+            target = interpret_selector(target_data, llm_selector)
         elif isinstance(target_data, int):
             target = target_data
 
@@ -138,7 +139,8 @@ class FlowLang(Flow):
                 init_space = r['Init']
             except KeyError:
                 raise ValueError("An `@Init(<space>)` directive must be present if the `init_space` argument is not provided.")
-        super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags']))),
+        self.llm_selector: LLMSelector = LLMSelector()
+        super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'], llm_selector=self.llm_selector))),
                          [SpaceState([Cell(s) for s in string]) for string in init_space])
         interpret_directives({'Flow': self, 'Self': self}, self.ast['directives'])
 

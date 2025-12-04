@@ -1,10 +1,10 @@
 @Init(AB);
-@Self.evolve_n(10);
+@Self.evolve_n(20);
 
 ABA -> AAB;
 A -> ABA;
 
-(-g[1] -nib -nds) {
-    /B+$/ ><;
-    [0,] >><<;
+(-g[1] -nib -nds -nct) {
+    "All them Bs at the end of the sequence, but only if there are more than 2." ><;
+    // [0,] >><<;
 }

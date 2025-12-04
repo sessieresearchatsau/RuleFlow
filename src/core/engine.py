@@ -377,7 +377,7 @@ class DeltaCells(NamedTuple):  # the cells that were created and destroyed by so
 class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
-    output_space: SpaceState
+    output_space: SpaceState | None  # can be none
     cell_deltas: DeltaCells
 
     def __bool__(self) -> bool:
@@ -423,7 +423,8 @@ class Event:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                yield space_delta.output_space
+                if space_delta.output_space:
+                    yield space_delta.output_space
 
     def __str__(self):
         return '[' + ', '.join((str(space) for space in self.spaces)) + ']'

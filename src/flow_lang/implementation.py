@@ -194,13 +194,11 @@ class BaseRule(RuleABC):
                     if self.crp in ('branch', 'branch_nbl'):
                         if self.crp == 'branch' and bl == 0:
                             continue
-                        if self.no_delta_submit:
-                            continue
                         branch: SpaceState = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
                         dc: DeltaCells = self._call_space_modifier(branch, selector, target)
                         modified_spaces.append(DeltaSpace(
                             input_space=old_space,
-                            output_space=branch,
+                            output_space=branch if not self.no_delta_submit else None,
                             cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else dc
                         ))
                     elif self.crp == 'skip':
@@ -219,9 +217,9 @@ class BaseRule(RuleABC):
                 if pl == self.parallel_execution_limit or idx == matches_bound:  # if parallel execution limit is reached OR no more matches for the space
                     modified_spaces.append(DeltaSpace(
                         input_space=old_space,
-                        output_space=current_space,
+                        output_space=current_space if not self.no_delta_submit else None,
                         cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
-                    )) if not self.no_delta_submit else None
+                    ))
                     pl = 0
                     cell_deltas.clear()
                     self.on_execution.emit(rule_match, idx)
