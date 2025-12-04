@@ -137,7 +137,7 @@ class SpaceState(ABC):
 class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells)."""
 
-    def __init__(self, cells: Sequence[Cell] | Any) -> None:
+    def __init__(self, cells: list[Cell]) -> None:
         self.cells: list[Cell] = cells
         super().__init__()
 
@@ -145,7 +145,7 @@ class SpaceState1D(SpaceState):
         return ''.join((str(c) for c in self.cells))
 
     def __repr__(self):
-        return object.__repr__(self)
+        return str(self)
 
     def __eq__(self, other: SpaceState1D) -> bool:
         for sc, oc in zip(self.cells, other.cells):
@@ -291,9 +291,6 @@ class RuleMatch(NamedTuple):
     matches: Sequence[tuple[int, int]] | Any  # Any is to support higher dimension matches.
     conflicts: set[int]  # conflicting matches (idx of the match) that must be resolved.
 
-    def __bool__(self) -> bool:
-        return bool(self.conflicts) or bool(self.matches)
-
 
 class Rule(ABC):
     def __init__(self):
@@ -342,6 +339,12 @@ class RuleSet:
         This should ideally accept a list of Rules either as objects or as strings that should then be parsed into their corresponding rules. The rules should be stored in array."""
         self.rules: list[Rule] = rules
 
+    def __str__(self) -> str:
+        return str(self.rules)
+
+    def __repr__(self) -> str:
+        return str(self)
+
     def apply(self, to_spaces: Sequence[SpaceState]) -> list[DeltaSpaces]:
         """Applies the Rules to the given spaces, and returns a sequence of the DeltaSpaceSet."""
         group_management: dict = {
@@ -355,7 +358,7 @@ class RuleSet:
             if not active and not rule.always_apply:
                 continue
             rule_matches: Sequence[RuleMatch] = rule.match(to_spaces)
-            if any(rule_matches):
+            if rule_matches:  # if there are any rule matches.
                 space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(rule_matches), rule)
                 if space_deltas:  # to be robust in case a complex rule still fails (even though input matches were found we can't guarantee that it will always work)
                     applied_rules.append(space_deltas)
@@ -374,11 +377,11 @@ class DeltaCells(NamedTuple):  # the cells that were created and destroyed by so
 class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
-    output_space: SpaceState | None  # will be empty if no changes happened.
+    output_space: SpaceState
     cell_deltas: DeltaCells
 
     def __bool__(self) -> bool:
-        return bool(self.output_space) or bool(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return the delta cells for some reason?
+        return bool(self.output_space) or bool(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding deleting?
 
 
 class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
@@ -420,16 +423,7 @@ class Event:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                if space_delta.output_space:
-                    yield space_delta.output_space
-
-    @property
-    def unmodified_spaces(self) -> Iterator[SpaceState]:
-        """Returns all unmodified spaces"""
-        for r in self.space_deltas:
-            for space_delta in r.space_deltas:
-                if not space_delta.output_space:
-                    yield space_delta.input_space
+                yield space_delta.output_space
 
     def __str__(self):
         return '[' + ', '.join((str(space) for space in self.spaces)) + ']'
@@ -439,16 +433,18 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     def __init__(self, rule_set: RuleSet,
-                 initial_state: SpaceState | Sequence[SpaceState]):
+                 initial_space: Sequence[SpaceState]):
         self.events: list[Event] = [
-            Event(0, [DeltaSpaces((DeltaSpace(initial_state, initial_state, DeltaCells((), ())),), None)])
+            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, i, DeltaCells((), ())) for i in initial_space)), None)])
         ]
-        self.rule_set: RuleSet = rule_set
-        self.use_unmodified_spaces_in_next_event = False
+        self.rule_set: RuleSet = rule_set  # can be changed at any time to provide a new set of rules.
+        self.initial_space: Sequence[SpaceState] = initial_space  # just useful to keep track of, but only used in .clear_evolution()
+        # TODO: add the .graph attribute that updates as evolve happens.
 
         # make sure the initial cells in the space is connected to the creation event.
-        for cell in initial_state.get_all_cells():
-            cell.created_at = 0
+        for i in initial_space:
+            for cell in i.get_all_cells():
+                cell.created_at = 0
 
     @property
     def current_event(self) -> Event:
@@ -469,7 +465,7 @@ class Flow:
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
             - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
-        applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces) + (tuple(self.current_event.unmodified_spaces) if self.use_unmodified_spaces_in_next_event else ()))
+        applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
@@ -502,6 +498,11 @@ class Flow:
         while not self.current_event.inert and max_steps:
             self.evolve()
             max_steps -= 1
+
+    def clear_evolution(self, new_initial_space: Sequence[SpaceState] | None = None) -> None:
+        """Clear the evolution."""
+        self.events.clear()
+        self.__init__(self.rule_set, new_initial_space if new_initial_space else self.initial_space)  # just resets everything
 
     def __str__(self) -> str:
         return self.print(print_to_terminal=False)

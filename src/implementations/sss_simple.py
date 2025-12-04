@@ -29,8 +29,8 @@ class ReplacementRule(RuleABC):
 
 
 class SSS(Flow):
-    def __init__(self, rule_set: list[str], initial_state: str):
-        super().__init__(RuleSet([ReplacementRule(s) for s in rule_set]), StateSpace([Cell(s) for s in initial_state]))
+    def __init__(self, rule_set: list[str], initial_space: str):
+        super().__init__(RuleSet([ReplacementRule(s) for s in rule_set]), StateSpace([Cell(s) for s in initial_space]))
 
 
 if __name__ == "__main__":

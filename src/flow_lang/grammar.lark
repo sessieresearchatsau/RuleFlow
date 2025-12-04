@@ -8,7 +8,7 @@ start: (global_flags | block | instruction_sequence | directive | COMMENT)*
 global_flags: flags
 
 // A instruction block: (-flags) { sequence of instructions... }
-block: "(" flag+ ")" "{" instruction_sequence "}"
+block: "(" flags ")" "{" instruction_sequence "}"
 
 // Rules inside a group block (must end with a semicolon)
 instruction_sequence: (instruction ";")+

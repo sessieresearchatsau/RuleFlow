@@ -25,7 +25,7 @@ class Selector(NamedTuple):
 
 
 class BaseRule(RuleABC):
-    FLAG_ALIAS: dict[str, str] = {
+    FLAG_ALIAS: dict[str, str] = {  # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
         # ==== basic flags ====
         'd': 'disabled',
         'g': 'group',
@@ -41,7 +41,8 @@ class BaseRule(RuleABC):
         # ==== apply() flags ====
         'nct': 'no_causality_tracking',
         'nib': 'no_initial_branch',
-        'pl': 'parallel_processing_limit',
+        'nds': 'no_delta_submit',
+        'pl': 'parallel_execution_limit',
         'bl': 'branch_limit',
         'bo': 'branch_origin',
         # tso
@@ -59,13 +60,14 @@ class BaseRule(RuleABC):
         # ======== Flags (that modify the internal rule behavior) ========
         # match() flags
         self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
-        self.match_range: tuple[int, int, int] = (0, 1, 1)  # the range of matches if there are multiple matches. Step can determine order.
+        self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
         self.offset: int = 0  # the offset to index the selectors return.
         self.cmp: Literal["both", "og", "this", "ignore"] = "this"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
+        self.no_delta_submit: bool = False  # if no changes are to be submitted (even if they do occur)
         self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
         self.branch_origin: Literal["origin", "current"] = 'origin'
@@ -91,6 +93,9 @@ class BaseRule(RuleABC):
         self.on_execution: Signal = Signal()
         self.on_branch: Signal = Signal()
         self.on_conflict: Signal = Signal()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {self.target.selector})"
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
@@ -125,7 +130,7 @@ class BaseRule(RuleABC):
                     finds = iter((pattern.selector,))
                 else: finds = iter(())
                 for idx, span in enumerate(finds):
-                    if self.match_range[0] > idx or (idx - self.match_range[0]) % self.match_range[2] == 0:
+                    if self.match_range[0] > idx:
                         continue
                     if idx >= self.match_range[1]:
                         break
@@ -134,13 +139,14 @@ class BaseRule(RuleABC):
                     matches.append(span)
             if self.offset:
                 matches = list(map(lambda m: (m[0]+self.offset, m[1]+self.offset), matches))
-            out.append(
-                RuleMatch(
-                    space=space,
-                    matches=matches,
-                    conflicts=conflicts
+            if matches:
+                out.append(
+                    RuleMatch(
+                        space=space,
+                        matches=matches,
+                        conflicts=conflicts
+                    )
                 )
-            )
         return out
 
     def _aggregate_DeltaCells(self, delta_cells: list[DeltaCells]) -> DeltaCells:
@@ -164,7 +170,8 @@ class BaseRule(RuleABC):
             current_space: SpaceState = old_space if self.no_initial_branch else copy(old_space)
             cell_deltas: list[DeltaCells] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
             pl: int = 0  # parallel executions
-            bl: int = self.branch_limit  # branch executions
+            bl: int = 0  # branch executions
+            matches_bound: int = len(rule_match.matches) - 1
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
                 # make sure the target is in a correct form for all rules (Sequence[Cell] for rewriting or inserting, None for deleting or reversing, and int for shifting)
                 target: Sequence[Cell] | int | None = None
@@ -185,6 +192,10 @@ class BaseRule(RuleABC):
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
                     self.on_conflict.emit(rule_match, idx)
                     if self.crp in ('branch', 'branch_nbl'):
+                        if self.crp == 'branch' and bl == 0:
+                            continue
+                        if self.no_delta_submit:
+                            continue
                         branch: SpaceState = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
                         dc: DeltaCells = self._call_space_modifier(branch, selector, target)
                         modified_spaces.append(DeltaSpace(
@@ -205,20 +216,20 @@ class BaseRule(RuleABC):
                 pl += 1  # increment the parallel execution tracker
 
                 # if pl is at max, submit modified space
-                if pl == self.parallel_execution_limit:  # if parallel execution limit is reached.
+                if pl == self.parallel_execution_limit or idx == matches_bound:  # if parallel execution limit is reached OR no more matches for the space
                     modified_spaces.append(DeltaSpace(
                         input_space=old_space,
                         output_space=current_space,
                         cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
-                    ))
+                    )) if not self.no_delta_submit else None
                     pl = 0
                     cell_deltas.clear()
                     self.on_execution.emit(rule_match, idx)
 
-                    # set the new current space
-                    if bl != 0:
+                    # set the new current space (branch into another universe)
+                    if bl != self.branch_limit:
                         current_space = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
-                        bl -= 1
+                        bl += 1
                         self.on_branch.emit(rule_match, idx)
                     else:
                         break  # break out of loop if no branches are supposed to be made.

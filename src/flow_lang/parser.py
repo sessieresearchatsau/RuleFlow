@@ -1,5 +1,6 @@
 from lark import Lark, Transformer, Tree
 from numerical_helpers import str_to_num, INF
+from typing import NamedTuple, Any
 
 
 class FlowLangTransformer(Transformer):
@@ -190,9 +191,11 @@ if __name__ == "__main__":
     -test[, 1.5, 3, AB, false]
     -test2
     -test3[1.2]
-
-    ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
-    ABB ><;
-    ABB << 3;
+    (-b -h) {
+        ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
+        ABB ><;
+        ABB << 3;
+    }
     """)
+    print(type(t))
     pprint(t)

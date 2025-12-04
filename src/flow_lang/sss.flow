@@ -1,0 +1,10 @@
+@Init(AB);
+@Self.evolve_n(10);
+
+ABA -> AAB;
+A -> ABA;
+
+(-g[1] -nib -nds) {
+    /B+$/ ><;
+    [0,] >><<;
+}
