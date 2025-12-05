@@ -142,7 +142,7 @@ class FlowLang(Flow):
         self.llm_selector: LLMSelector = LLMSelector()
         super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'], llm_selector=self.llm_selector))),
                          [SpaceState([Cell(s) for s in string]) for string in init_space])
-        interpret_directives({'Flow': self, 'Self': self}, self.ast['directives'])
+        interpret_directives({'Flow': self, 'Self': self, 'Evolve': self.evolve_n}, self.ast['directives'])
 
     @classmethod
     def from_file(cls, path: str):
@@ -152,17 +152,13 @@ class FlowLang(Flow):
 
 
 if __name__ == "__main__":
+    # "All them Bs at the end of the sequence, but only if there are more than 2."
     code = """
     @Init(AB);
     @Self.evolve_n(20);
     
     ABA -> AAB;
     A -> ABA;
-    
-    (-g[1] -nib -nds) {
-        /B+$/ ><;
-        [0,] >><<;
-    }
     """
     flow = FlowLang.from_file('sss.flow')
     flow.print()

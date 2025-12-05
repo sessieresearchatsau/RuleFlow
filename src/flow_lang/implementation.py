@@ -25,7 +25,8 @@ class Selector(NamedTuple):
 
 
 class BaseRule(RuleABC):
-    FLAG_ALIAS: dict[str, str] = {  # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
+    FLAG_ALIAS: dict[str, str] = {
+        # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
         # ==== basic flags ====
         'd': 'disabled',
         'g': 'group',
@@ -61,17 +62,16 @@ class BaseRule(RuleABC):
         # match() flags
         self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
-        self.offset: int = 0  # the offset to index the selectors return.
+        self.offset: int = 0  # the offset to the index that selectors return.
         self.cmp: Literal["both", "og", "this", "ignore"] = "this"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
-        self.no_delta_submit: bool = False  # if no changes are to be submitted (even if they do occur)
+        self.no_delta_submit: bool = False  # if no new states are to be submitted (even if they do occur)
         self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
-        self.branch_origin: Literal["origin", "current"] = 'origin'
-        self.tso: Literal["origin", "current"] = 'origin'  # target selector origin. If the target involves a selector, choose where to pull characters from. To keep causality clean, the selected cells are always copied as new cells.
+        self.branch_origin: Literal["prev", "current"] = "prev"
         self.crp: Literal["branch", "branch_nbl", "skip", "break", "ignore"] = "ignore"  # conflict resolution protocol. Note: at some point this could be extended to exclude BOTH conflicts, not just the one conflicting with the other.
 
         # rule life flags
@@ -79,8 +79,8 @@ class BaseRule(RuleABC):
 
         # stochastic flags
         self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every time.
-        self.p_match: int | None = None  # probability that a match will be counted
-        self.p_space: int | None = None  # probability that a space will be selected
+        self.p_match: int | None = None  # probability that a match will be counted.
+        self.p_space: int | None = None  # probability that a space will be selected.
         self.p_apply: int | None = None  # probability that a rule will apply() at all.
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
@@ -99,19 +99,20 @@ class BaseRule(RuleABC):
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
+        this_idx: int = len(current_matches)  # the len will be the index of match
         conflicts: set[int] = set()
         start1, end1 = match
-        for idx, m in enumerate(current_matches):
+        for og_idx, m in enumerate(current_matches):
             start2, end2 = m
             if (start1 < start2 < end1 or start1 < end2 < end1
                     or start2 < start1 < end2 or start2 < end1 < end2):
-                this_idx: int = len(current_matches)  # the len will be the index of match
-                og_idx: int = idx
                 if self.crp == "this": conflicts.add(this_idx)
                 elif self.crp == "og": conflicts.add(og_idx)
                 elif self.cmp == "both":
                     conflicts.add(this_idx)
                     conflicts.add(og_idx)
+                else:  # if "ignore"
+                    continue
         return conflicts
 
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
@@ -166,8 +167,8 @@ class BaseRule(RuleABC):
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
-            old_space: SpaceState = cast(SpaceState, rule_match.space)
-            current_space: SpaceState = old_space if self.no_initial_branch else copy(old_space)
+            prev_space: SpaceState = cast(SpaceState, rule_match.space)
+            current_space: SpaceState = prev_space if self.no_initial_branch else copy(prev_space)
             cell_deltas: list[DeltaCells] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
             pl: int = 0  # parallel executions
             bl: int = 0  # branch executions
@@ -181,12 +182,11 @@ class BaseRule(RuleABC):
                     if t.type == 'literal':
                         target = t.selector
                     elif t.type in ('regex', 'range'):
-                        origin_space: SpaceState = (old_space if self.tso == 'origin' else current_space)
-                        span: tuple[int, int] | None = next(origin_space.regex_find(t.selector), None) \
+                        span: tuple[int, int] | None = next(prev_space.regex_find(t.selector), None) \
                         if t.type == 'regex' else t.selector if t.type == 'range' else None
                         if span is None:
                             break
-                        target = origin_space[span[0]:span[1]]
+                        target = prev_space[span[0]:span[1]]
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
@@ -194,10 +194,10 @@ class BaseRule(RuleABC):
                     if self.crp in ('branch', 'branch_nbl'):
                         if self.crp == 'branch' and bl == 0:
                             continue
-                        branch: SpaceState = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
+                        branch: SpaceState = copy(prev_space)
                         dc: DeltaCells = self._call_space_modifier(branch, selector, target)
                         modified_spaces.append(DeltaSpace(
-                            input_space=old_space,
+                            input_space=prev_space,
                             output_space=branch if not self.no_delta_submit else None,
                             cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else dc
                         ))
@@ -216,7 +216,7 @@ class BaseRule(RuleABC):
                 # if pl is at max, submit modified space
                 if pl == self.parallel_execution_limit or idx == matches_bound:  # if parallel execution limit is reached OR no more matches for the space
                     modified_spaces.append(DeltaSpace(
-                        input_space=old_space,
+                        input_space=prev_space,
                         output_space=current_space if not self.no_delta_submit else None,
                         cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
                     ))
@@ -226,7 +226,7 @@ class BaseRule(RuleABC):
 
                     # set the new current space (branch into another universe)
                     if bl != self.branch_limit:
-                        current_space = copy(old_space) if self.branch_origin == 'origin' else copy(current_space)
+                        current_space = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)
                         bl += 1
                         self.on_branch.emit(rule_match, idx)
                     else:
