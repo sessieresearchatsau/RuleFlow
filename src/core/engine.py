@@ -290,6 +290,7 @@ class RuleMatch(NamedTuple):
     space: SpaceState
     matches: Sequence[tuple[int, int]] | Any  # Any is to support higher dimension matches.
     conflicts: set[int]  # conflicting matches (idx of the match) that must be resolved.
+    id: Any = None
 
 
 class Rule(ABC):

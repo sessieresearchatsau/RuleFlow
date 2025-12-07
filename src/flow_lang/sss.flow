@@ -4,6 +4,6 @@
 ABA -> AB;
 A -> ABA;
 
-(-g[1] -nib -nds -nct) {
+(-a -nib -nds -nct) {
     "The Bs at the end, but only if there are more than 4" ><;
 }
