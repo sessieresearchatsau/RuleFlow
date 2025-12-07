@@ -2,7 +2,6 @@
 
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
-- Maybe make a CompositeRule object for rule merger directives to construct (outlined in then Future Directives section of the Language Specification).
 """
 from typing import Sequence, NamedTuple, Literal, cast, Iterator, Any, Callable
 from re import Pattern
@@ -57,13 +56,16 @@ class BaseRule(RuleABC):
         self.selectors: Sequence[Selector] = selector  # used by self.match()
         self.target: Selector | int | None = target  # used by self.apply()  # Selector is for most operations, Int for operations such as shifting, and None for operations such as delete.
 
+        # Complex Functionality
+        self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
+        self.is_in_chain: bool = False  # if this is true, this rule will be ignored as it is expected to run in a chain.
 
         # ======== Flags (that modify the internal rule behavior) ========
         # match() flags
         self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
         self.offset: int = 0  # the offset to the index that selectors return.
-        self.cmp: Literal["both", "og", "this", "ignore"] = "this"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
+        self.cmp: Literal["both", "og", "this", "ignore"] = "ignore"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
@@ -115,37 +117,44 @@ class BaseRule(RuleABC):
                     continue
         return conflicts
 
+    # noinspection PyMethodFirstArgAssignment
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
+        if self.is_in_chain:
+            return ()  # we do not run the rule outside the collective "self"
         spaces: Sequence[SpaceState] = spaces[slice(*self.space_range)]
         out: list[RuleMatch] = []
         for space in spaces:
+            chained: list[BaseRule] = []
             matches: list[tuple[int, int]] = []
             conflicts: set[int] = set()
-            for pattern in self.selectors:
-                finds: Iterator[tuple[int, int]]
-                if pattern.type == 'literal':
-                    finds = space.find(pattern.selector)  # it is better if the selector is already a Sequence[Cell] because otherwise the raw string has to be converted every time.
-                elif pattern.type == 'regex':
-                    finds = space.regex_find(pattern.selector)
-                elif pattern.type == 'range':
-                    finds = iter((pattern.selector,))
-                else: finds = iter(())
-                for idx, span in enumerate(finds):
-                    if self.match_range[0] > idx:
-                        continue
-                    if idx >= self.match_range[1]:
-                        break
-                    if self.cmp != 'ignore':
-                        conflicts.update(self._conflict_detector(matches, span))
-                    matches.append(span)
-            if self.offset:
-                matches = list(map(lambda m: (m[0]+self.offset, m[1]+self.offset), matches))
+            for self in self.chain:
+                for pattern in self.selectors:
+                    finds: Iterator[tuple[int, int]]
+                    if pattern.type == 'literal':
+                        finds = space.find(pattern.selector)  # it is better if the selector is already a Sequence[Cell] because otherwise the raw string has to be converted every time.
+                    elif pattern.type == 'regex':
+                        finds = space.regex_find(pattern.selector)
+                    elif pattern.type == 'range':
+                        finds = iter((pattern.selector,))
+                    else: continue
+                    for idx, span in enumerate(finds):
+                        if self.offset:
+                            span = (span[0] + self.offset, span[1] + self.offset)
+                        if self.match_range[0] > idx:
+                            continue
+                        if idx >= self.match_range[1]:
+                            break
+                        if self.cmp != 'ignore':
+                            conflicts.update(self._conflict_detector(matches, span))
+                        matches.append(span)
+                        chained.append(self)  # these "line up" with the matches
             if matches:
                 out.append(
                     RuleMatch(
                         space=space,
                         matches=matches,
-                        conflicts=conflicts
+                        conflicts=conflicts,
+                        metadata=chained,  # we simply use this extra (and optional) metadata field to let .apply() know which rule in self.chain is tied to which match.
                     )
                 )
         return out
@@ -164,7 +173,9 @@ class BaseRule(RuleABC):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | None) -> DeltaCells:
         raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, deepcopy(target))`)')
 
+    # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
+        og_self: BaseRule = self.chain[0]  # because self is reassigned when there are self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
             prev_space: SpaceState = cast(SpaceState, rule_match.space)
@@ -174,6 +185,9 @@ class BaseRule(RuleABC):
             bl: int = 0  # branch executions
             matches_bound: int = len(rule_match.matches) - 1
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
+                # noinspection PyTypeHints
+                self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
+
                 # make sure the target is in a correct form for all rules (Sequence[Cell] for rewriting or inserting, None for deleting or reversing, and int for shifting)
                 target: Sequence[Cell] | int | None = None
                 if isinstance(self.target, int):
@@ -192,7 +206,7 @@ class BaseRule(RuleABC):
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
                     self.on_conflict.emit(rule_match, idx)
                     if self.crp in ('branch', 'branch_nbl'):
-                        if self.crp == 'branch' and bl == 0:
+                        if self.crp == 'branch' and bl == self.branch_limit:
                             continue
                         branch: SpaceState = copy(prev_space)
                         dc: DeltaCells = self._call_space_modifier(branch, selector, target)
@@ -232,6 +246,7 @@ class BaseRule(RuleABC):
                     else:
                         break  # break out of loop if no branches are supposed to be made.
 
+        self = og_self  # make sure we are referring to the top of the chain version of "self"
         # ensure the lifespan is enforced
         self.lifespan -= 1  # will not affect infinity if so set
         if self.lifespan == 0 and modified_spaces:

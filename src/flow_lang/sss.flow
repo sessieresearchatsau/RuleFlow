@@ -1,9 +1,10 @@
 @Init(AB);
 @Evolve(20);
 
-ABA -> AB;
-A -> ABA;
-
-(-a -nib -nds -nct) {
-    "The Bs at the end, but only if there are more than 4" ><;
+(-g[eca]) {
+    ABA -> AAB;
+    A -> ABA;
 }
+// (-a -nib -nds -nct) {
+//     "The Bs at the end, but only if there are more than 4" ><;
+// }

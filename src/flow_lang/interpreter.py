@@ -134,7 +134,7 @@ class FlowLang(Flow):
         if isinstance(init_space, str):
             init_space = (init_space,)
         if init_space is None:
-            r = interpret_directives({'Init': lambda *args: args}, self.ast['directives'])
+            r: dict[str, Any] = interpret_directives({'Init': lambda *args: args}, self.ast['directives'])
             try:
                 init_space = r['Init']
             except KeyError:
@@ -142,7 +142,19 @@ class FlowLang(Flow):
         self.llm_selector: LLMSelector = LLMSelector()
         super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'], llm_selector=self.llm_selector))),
                          [SpaceState([Cell(s) for s in string]) for string in init_space])
-        interpret_directives({'Flow': self, 'Self': self, 'Evolve': self.evolve_n}, self.ast['directives'])
+        interpret_directives({'Evolve': self.evolve_n, 'Merge': self.__merge_group}, self.ast['directives'])
+
+    def __merge_group(self, identifier: int | str):
+        """A directive to merge a particular group into a chain (a composite rule)"""
+        rules: list[BaseRule] = cast(list[BaseRule], self.rule_set.rules)
+        for i in range(len(rules)):
+            if rules[i].group == identifier:
+                head = rules[i]
+                for j in range(i + 1, len(rules)):
+                    if rules[j].group == identifier:
+                        head.chain.append(rules[j])
+                        rules[j].is_in_chain = True
+                break
 
     @classmethod
     def from_file(cls, path: str):
