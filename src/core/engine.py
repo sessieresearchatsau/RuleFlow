@@ -50,9 +50,6 @@ class Cell:
     created_at: int | None = None
     destroyed_at: int | None = None
 
-    # extra metadata (useful for weighted causality tracking)
-    weight: float | int = 1
-
     def __str__(self):
         """String representation of quanta"""
         return str(self.quanta)
@@ -64,16 +61,8 @@ class Cell:
         """Semantic equality (use is for true equality)"""
         return self.quanta == other.quanta
 
-    def __copy__(self) -> Cell:
-        """Copies the Cell (self), but does not copy the quanta itself (it retains the reference to it). It is a shallow copy."""
-        new_cell = object.__new__(self.__class__)
-        new_cell.quanta = self.quanta
-        new_cell.created_at = self.created_at
-        new_cell.destroyed_at = self.destroyed_at
-        return new_cell
-
     def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__
-        return self.__copy__()
+        return copy(self)
 
 
 class SpaceState(ABC):
@@ -213,7 +202,8 @@ class SpaceState1D(SpaceState):
         return DeltaCells((), new)
 
     def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCells:
-        destroyed: tuple[Cell, ...] = ()
+        _destroyed: tuple[Cell, ...] = ()
+        _new: tuple[Cell, ...] = ()
         if selector < 0:
             selector = len(self.cells) + selector
         for i in range(len(new)):
@@ -222,11 +212,12 @@ class SpaceState1D(SpaceState):
             if new_char.quanta == '_':  # skip these
                 continue
             try:
-                destroyed += (self.cells[idx],)
-                self.cells[idx] = new[i]
+                _destroyed += (self.cells[idx],)
+                self.cells[idx] = new_char
             except IndexError:
-                self.cells.append(new[i])
-        return DeltaCells(deepcopy(destroyed), new)
+                self.cells.append(new_char)
+            _new += (new_char,)
+        return DeltaCells(deepcopy(_destroyed), _new)
 
     def delete(self, selector: tuple[int, int]) -> DeltaCells:
         start, end = selector
@@ -306,7 +297,6 @@ class Rule(ABC):
         """
         # metadata
         self.id: str = ''  # could be used to filter rules.
-        self.weight: float | int = 1  # could be used for weighted causality tracking.
 
         # Flags (these are only those which modify default RuleSet behavior)
         self.disabled: bool = False  # if the rule is disabled (dead)
@@ -401,7 +391,7 @@ class Event:
 
     # metadata
     inert: bool = False  # if true, the new event caused no changes to the system.
-    weight: int | float = 1  # can be used for weighted causality tracking. (think of it as a time multiplier/dilator)
+    weight: int | float = 1  # could be used for weighted causality tracking. (think of it as a time multiplier/dilator)
     causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
     @property  # maybe cache this?

@@ -1,0 +1,13 @@
+// Rule 30
+@Init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+
+// define the rules
+@Merge(0);
+(-pl[inf] -mr[0,inf]) {
+    BB_ --> _A_;
+    BAA --> _B_;
+    A_B --> _B_;
+}
+
+// Run 20 times
+@Evolve(20);

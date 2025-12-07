@@ -1,6 +1,5 @@
 from lark import Lark, Transformer, Tree
 from numerical_helpers import str_to_num, INF
-from typing import NamedTuple, Any
 
 
 class FlowLangTransformer(Transformer):
