@@ -6,8 +6,8 @@
 (-pl[inf] -mr[0,inf]) {
     BB_ --> _A_;
     BAA --> _B_;
-    A_B --> _B_;
+    AAB --> _B_;
 }
 
 // Run 20 times
-@Evolve(20);
+@Evolve(16);
