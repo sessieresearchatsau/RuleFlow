@@ -1,6 +1,6 @@
 """Provides all the tools for optimized and rigorous graph analysis."""
 from core.engine import Flow
-from networkx import MultiDiGraph
+from networkx import MultiDiGraph, write_gexf
 from pyvis.network import Network
 
 
@@ -28,10 +28,17 @@ class CausalGraph(MultiDiGraph):
         return None
 
     # same as the the glxl file...
-    def save_to_gephi_file(self):
-        pass
+    def save_to_gephi_file(self, path: str) -> None:
+        """Save to the GLXL file format"""
+        write_gexf(self, path)
 
-    def render_in_browser(self, filename: str = "causal_network.html", show_controls: list[str] | bool | None = None):
+    def render_in_browser(self, filename: str = "causal_network.html",
+                          show_controls: list[str] | bool | None = None,
+                          shape: str = 'box',
+                          show_state: bool = False,
+                          show_label: bool = True,
+                          show_distance: bool = True,
+                          collapse_edges: bool = False):
         """
         Uses pyvis to render the causal network from a Flow object.
         """

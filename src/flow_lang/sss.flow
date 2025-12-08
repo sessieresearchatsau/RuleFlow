@@ -1,10 +1,8 @@
 // set the initial state
 @Init(AB);
 
-// preprocessing
-// remove extra Bs at the end (they don't contribute to causality for this system)
 (-a -nib -nct -nds) {
-    "All those Bs at the end of the sequence" ><;
+    "All those Bs at the end of the sequence, but more than 3 Bs." ><;
 }
 
 // define the sequential rules

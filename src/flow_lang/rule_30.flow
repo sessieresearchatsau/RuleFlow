@@ -10,4 +10,4 @@
 }
 
 // Run n times
-@Evolve(16);
+@Evolve(32);
