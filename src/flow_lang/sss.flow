@@ -1,0 +1,10 @@
+@Init(AB);
+
+(-a -nib -nct -nds) {
+    "All those Bs at the end of the sequence" ><;
+}
+
+ABA -> AAB;
+A -> ABA;
+
+@Evolve(40);
