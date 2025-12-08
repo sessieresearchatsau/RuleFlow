@@ -9,5 +9,5 @@
     AAB --> _B_;
 }
 
-// Run 20 times
+// Run n times
 @Evolve(16);

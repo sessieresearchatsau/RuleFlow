@@ -1,0 +1,15 @@
+// set the initial state
+@Init(AB);
+
+// preprocessing
+// remove extra Bs at the end (they don't contribute to causality for this system)
+(-a -nib -nct -nds) {
+    "All those Bs at the end of the sequence" ><;
+}
+
+// define the sequential rules
+ABA -> AAB;
+A -> ABA;
+
+// Run n times
+@Evolve(40);

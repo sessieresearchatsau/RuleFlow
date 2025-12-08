@@ -79,7 +79,7 @@ class BaseRule(RuleABC):
         # rule life flags
         self.lifespan: int = INF  # how many times this rule is allowed to be successfully applied. This is the overall effect a rule can have before it dies.
 
-        # stochastic flags
+        # stochastic flags  TODO: implement these
         self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every time.
         self.p_match: int | None = None  # probability that a match will be counted.
         self.p_space: int | None = None  # probability that a space will be selected.
