@@ -3,11 +3,14 @@
 
 // define the rules
 @merge(0);
+@compress(0);
 (-pl[inf] -mr[0,inf]) {
-    BB_ --> _A_;
-    BAA --> _B_;
-    AAB --> _B_;
+    // BB_ --> _A_;
+    // BAA --> _B_;
+    // AAB --> _B_;
+    @decode(wns, AB, 30);  // rule 30
 }
 
 // Run n times
-@evolve(16);
+@evolve(20);
+@print();
