@@ -1,5 +1,49 @@
-from lark import Lark, Transformer, Tree
+from core import enumerator
+from lark import Lark, Transformer
 from numerical_helpers import str_to_num, INF
+from typing import Any, cast
+
+
+BUILTIN_IMPORT_PATHS: dict[str, str] = {
+    'eca_presets': "@merge(0);\n-pl[inf]\n-mr[0,inf]"  # default import code to streamline the use of ECAs in the 0th group.
+}
+
+
+def _r_parse(value: str) -> dict[str, Any]:
+    """Recursive parsing helper for top-level directives"""
+    return cast(dict[str, Any], cast(object, FlowLangParser(use_transformer=True).parse(value)))
+
+
+def import_directive(path: str) -> list[dict[str, Any]]:
+    """Import from a file or preset"""
+    value: str = BUILTIN_IMPORT_PATHS.get(path, None)
+    if value is None:
+        with open(f'{path}.flow') as f:
+            value: str = f.read()
+    result = _r_parse(value)
+    result['type'] = 'imported'  # we create an "imported" object type.
+    return [result]
+
+
+def decode_directive(method: str, charset: str, index: int | float) -> list[dict[str, Any]]:
+    """Just use the general functions for rule enumeration and convert that to a string, parse, and return."""
+    if method == 'wns':
+        src: str = ''.join([
+            f'{selector} --> _{target};'
+            for selector, target in enumerator.wolfram_numbering_scheme(charset, index)
+        ])
+        return _r_parse(src)['instructions']
+    raise ValueError(f'Enumeration method `{method}` is not implemented')
+
+
+def intercept_top_level_directive(d: dict[str, Any]) -> list[dict[str, Any]]:
+    name: str = d['key']
+    if name == 'import':
+        return import_directive(d['value'][0])
+    elif name == 'decode':
+        return decode_directive(*d['value'])
+    else:  # if there is nothing to intercept just propagate
+        return [d]
 
 
 class FlowLangTransformer(Transformer):
@@ -28,17 +72,21 @@ class FlowLangTransformer(Transformer):
         The root of the file. Collects all top-level elements into a single list
         of instructions and a dictionary of ruleset flags.
         """
-        directives = {}
+        directives = []
         global_flags = {}
         instructions = []
         for array in items:
             for item in array:
                 if item['type'] == 'directive':
-                    directives[item['key']] = item['value']
+                    directives.append((item['key'], item['value']))
                 elif item['type'] == 'global_flags':
                     global_flags.update(item['flags'])
                 elif item['type'] == 'instruction':
                     instructions.append(item)
+                elif item['type'] == 'imported':
+                    directives.extend(item['directives'])
+                    global_flags.update(item['global_flags'])
+                    instructions.extend(item['instructions'])
         return {
             'directives': directives,
             'global_flags': global_flags,  # the flags the set the defaults
@@ -50,11 +98,11 @@ class FlowLangTransformer(Transformer):
             value: tuple = tuple((self.parse_part(p) for p in items[1].value.split(',')))  # parse the args
         else:
             value: tuple = ()
-        return [{
+        return intercept_top_level_directive({
             'type': 'directive',
             'key': items[0].value,
             'value': value
-        }]
+        })
 
     def global_flags(self, items):
         return [{'type': 'global_flags', 'flags': items[0]}]  # we wrap in a list so that the start() visitor can do less work
@@ -182,19 +230,18 @@ if __name__ == "__main__":
     from pprint import pprint
     parser = FlowLangParser()
     t = parser.parse("""
-    // Directives
-    @Universe.test(=, 2);
-    @Test(test);
-
-    // Global Flags
-    -test[, 1.5, 3, AB, false]
-    -test2
-    -test3[1.2]
-    (-b -h) {
-        ABB [2,] [, 2] [2] [-inf, inf] -> ABB -f[1, 2];
-        ABB ><;
-        ABB << 3;
+    // Rule 30
+    @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+    @import(eca_presets);
+    
+    // define the rules
+    @merge(0);
+    (-pl[inf] -mr[0,inf]) {
+        @decode(wns, AB, 30);
     }
+    
+    // Run n times
+    @evolve(16);
     """)
     print(type(t))
     pprint(t)

@@ -47,8 +47,8 @@ class Cell:
 
     # NOTE: the metadata is the ONLY thing that makes cells differentiable (other than quanta of course)
     # Metadata regarding the creation and destruction of the cell... stored as indices to the events array.
-    created_at: int | None = None
-    destroyed_at: int | None = None
+    created_at: int = 0
+    destroyed_at: int = 0
 
     def __str__(self):
         """String representation of quanta"""

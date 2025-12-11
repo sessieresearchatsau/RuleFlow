@@ -29,7 +29,7 @@ You: Error"""
 
         # params for the call
         self.model: str = 'llama3.1:latest'
-        self.temperature: float | None = None
+        self.temperature: float | None = 0.1
         self.seed: int | None = None
 
     @lru_cache

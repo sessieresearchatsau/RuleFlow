@@ -156,10 +156,6 @@ class FlowLang(Flow):
                         rules[j].is_in_chain = True
                 break
 
-    def __compress_group(self):
-        """Compress the group into a minimal set of rule such that causality is preserved."""
-        pass
-
     @classmethod
     def from_file(cls, path: str):
         """opens `.flow` files and constructs a FlowLang object."""
@@ -176,7 +172,7 @@ if __name__ == "__main__":
     ABA -> AAB;
     A -> ABA;
     """
-    flow = FlowLang.from_file('rule_30.flow')
+    flow = FlowLang.from_file('sss.flow')
     flow.print()
     from core.graph import CausalGraph
     g = CausalGraph(flow)
