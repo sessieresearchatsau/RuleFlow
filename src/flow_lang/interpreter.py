@@ -134,15 +134,15 @@ class FlowLang(Flow):
         if isinstance(init_space, str):
             init_space = (init_space,)
         if init_space is None:
-            r: dict[str, Any] = interpret_directives({'Init': lambda *args: args}, self.ast['directives'])
+            r: dict[str, Any] = interpret_directives({'init': lambda *args: tuple(map(str, args))}, self.ast['directives'])
             try:
-                init_space = r['Init']
+                init_space = r['init']
             except KeyError:
                 raise ValueError("An `@Init(<space>)` directive must be present if the `init_space` argument is not provided.")
         self.llm_selector: LLMSelector = LLMSelector()
         super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'], llm_selector=self.llm_selector))),
                          [SpaceState([Cell(s) for s in string]) for string in init_space])
-        interpret_directives({'Evolve': self.evolve_n, 'Merge': self.__merge_group}, self.ast['directives'])
+        interpret_directives({'evolve': self.evolve_n, 'merge': self.__merge_group}, self.ast['directives'])
 
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
@@ -172,8 +172,8 @@ if __name__ == "__main__":
     ABA -> AAB;
     A -> ABA;
     """
-    flow = FlowLang.from_file('sss.flow')
+    flow = FlowLang.from_file('rule_30.flow')
     flow.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(flow)
-    g.render_in_browser()
+    # from core.graph import CausalGraph
+    # g = CausalGraph(flow)
+    # g.render_in_browser()

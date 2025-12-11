@@ -1,8 +1,8 @@
 // Rule 30
-@Init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+@init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
 
 // define the rules
-@Merge(0);
+@merge(0);
 (-pl[inf] -mr[0,inf]) {
     BB_ --> _A_;
     BAA --> _B_;
@@ -10,4 +10,4 @@
 }
 
 // Run n times
-@Evolve(16);
+@evolve(16);
