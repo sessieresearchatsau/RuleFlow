@@ -128,6 +128,7 @@ class BaseRule(RuleABC):
             matches: list[tuple[int, int]] = []
             conflicts: set[int] = set()
             for self in self.chain:
+                # TODO check if disabled
                 for pattern in self.selectors:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type == 'literal':
