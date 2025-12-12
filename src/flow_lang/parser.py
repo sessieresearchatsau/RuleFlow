@@ -5,7 +5,7 @@ from typing import Any, cast
 
 
 BUILTIN_IMPORT_PATHS: dict[str, str] = {
-    'eca_presets': "@merge(0);\n-pl[inf]\n-mr[0,inf]"  # default import code to streamline the use of ECAs in the 0th group.
+    'ca_presets': "@merge(0);\n-pl[inf]\n-mr[0,inf]"  # default import code to streamline the use of ECAs in the 0th group.
 }
 
 
@@ -19,18 +19,18 @@ def import_directive(path: str) -> list[dict[str, Any]]:
     value: str = BUILTIN_IMPORT_PATHS.get(path, None)
     if value is None:
         with open(f'{path}.flow') as f:
-            value: str = f.read()
+            value = f.read()
     result = _r_parse(value)
     result['type'] = 'imported'  # we create an "imported" object type.
     return [result]
 
 
-def decode_directive(method: str, charset: str, index: int | float) -> list[dict[str, Any]]:
+def decode_directive(method: str, *args) -> list[dict[str, Any]]:
     """Just use the general functions for rule enumeration and convert that to a string, parse, and return."""
     if method == 'wns':
         src: str = ''.join([
             f'{selector} --> _{target};'
-            for selector, target in enumerator.wolfram_numbering_scheme(charset, index)
+            for selector, target in enumerator.wolfram_numbering_scheme(*args)
         ])
         return _r_parse(src)['instructions']
     raise ValueError(f'Enumeration method `{method}` is not implemented')

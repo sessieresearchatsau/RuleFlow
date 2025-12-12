@@ -12,13 +12,13 @@ from implementation import (
 
 
 RULE_MAPPER: dict[str, Type[BaseRule]] = {
-        "->": SubstitutionRule,
-        ">": InsertionRule,
-        "-->": OverwriteRule,
-        "><": DeletionRule,
-        ">>": ShiftingRule,
-        "<<": ShiftingRule,
-        ">><<": ReverseRule,
+    "->": SubstitutionRule,
+    ">": InsertionRule,
+    "-->": OverwriteRule,
+    "><": DeletionRule,
+    ">>": ShiftingRule,
+    "<<": ShiftingRule,
+    ">><<": ReverseRule,
 }
 
 
@@ -33,7 +33,6 @@ def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector 
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
     elif s_type == "llm_prompt" and llm_selector:
-        # TODO: Add LLM prompt handling here when ready (returns a prompt string)
         re_pattern: re.Pattern = re.compile(llm_selector.prompt(s_value))
         return Selector(type='regex', selector=re_pattern)
     raise ValueError(f"Unknown selector type: {s_type}")
@@ -81,68 +80,56 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
         yield rule_instance
 
 
-def interpret_directives(objects: dict[str, Any], directives: dict[str, Any]) -> dict[str, Any]:
+def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, Any]]) -> dict[str, Any]:
     """
     Use the directives to modify (call) the `objects`.
     """
     returns: dict[str, Any] = {}
-    for path, args in directives.items():
+    for path, args in directives:
         parts = path.split('.')
         root_name = parts[0]
         root_obj = objects.get(root_name)
         if not root_obj:
             continue
-
         current_obj = root_obj
-        parent_obj = None  # we must keep track of this in case we want to assign to the attribute.
-        target_attr_name = parts[-1]
         try:
             for part in parts[1:]:
-                parent_obj = current_obj
                 current_obj = getattr(current_obj, part)
         except AttributeError:
             # noinspection PyUnboundLocalVariable
             print(f"Error: Could not traverse '{part}' in path '{path}'.")
             continue
-
-        if len(args) > 1 and args[0] == '=':
-            # Assignment Logic
-            val_to_assign = args[1:]
-            if len(val_to_assign) == 1:
-                val_to_assign = val_to_assign[0]
-            if parent_obj:
-                try:
-                    setattr(parent_obj, target_attr_name, val_to_assign)
-                except AttributeError:
-                    print(f"Error: Cannot set attribute on {parent_obj}.")
-            else:
-                print(f"Warning: Cannot assign value directly to root object '{root_name}'.")
-        else:
-            # Function Call Logic
-            if callable(current_obj):
-                returns[path] = current_obj(*args)
-            else:
-                print(f"Error: '{path}' is not callable.")
+        returns[path] = current_obj(*args)
     return returns
 
 
 class FlowLang(Flow):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def __init__(self, lang: str, init_space: Sequence[str] | str | None = None):  # init_space can be none if the @init directive is defined.
-        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+    def __init__(self, lang: str, init_space: Sequence[
+                                                  str] | str | None = None):  # init_space can be none if the @init directive is defined.
+        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(
+            lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         if isinstance(init_space, str):
             init_space = (init_space,)
         if init_space is None:
-            r: dict[str, Any] = interpret_directives({'Init': lambda *args: args}, self.ast['directives'])
+            r: dict[str, Any] = interpret_directives({'init': lambda *args: tuple(map(str, args))},
+                                                     self.ast['directives'])
             try:
-                init_space = r['Init']
+                init_space = r['init']
             except KeyError:
-                raise ValueError("An `@Init(<space>)` directive must be present if the `init_space` argument is not provided.")
+                raise ValueError(
+                    "An `@init(<space>)` directive must be present if the `init_space` argument is not provided.")
         self.llm_selector: LLMSelector = LLMSelector()
-        super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'], llm_selector=self.llm_selector))),
+        super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'],
+                                                             llm_selector=self.llm_selector))),
                          [SpaceState([Cell(s) for s in string]) for string in init_space])
-        interpret_directives({'Evolve': self.evolve_n, 'Merge': self.__merge_group}, self.ast['directives'])
+        interpret_directives({
+            'print': self.print,
+            'evolve': self.evolve_n,
+            'merge': self.__merge_group,
+            'compress': self.__compress_group
+        }, self.ast['directives'])
 
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
@@ -156,6 +143,23 @@ class FlowLang(Flow):
                         rules[j].is_in_chain = True
                 break
 
+    def __compress_group(self, identifier: int | str):
+        """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
+        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules) if rule.group == identifier]
+        # If any rule makes no changes, disable it.
+        for rule in rules:
+            if rule.disabled:
+                continue
+            rule_is_active: bool = False
+            for selector in rule.selectors:
+                for s_char, t_char in zip(selector.selector, rule.target.selector):
+                    if t_char.quanta == '_':
+                        continue
+                    if s_char.quanta != t_char.quanta:
+                        rule_is_active = True
+            if not rule_is_active:
+                rule.disabled = True
+
     @classmethod
     def from_file(cls, path: str):
         """opens `.flow` files and constructs a FlowLang object."""
@@ -166,14 +170,14 @@ class FlowLang(Flow):
 if __name__ == "__main__":
     # "All them Bs at the end of the sequence, but only if there are more than 2."
     code = """
-    @Init(AB);
-    @Self.evolve_n(20);
-    
+    @init(AB);
+    @evolve(30);
+
     ABA -> AAB;
     A -> ABA;
     """
-    flow = FlowLang.from_file('sss.flow')
+    flow = FlowLang.from_file('rule_30.flow')
     flow.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(flow)
-    g.render_in_browser()
+    # from core.graph import CausalGraph
+    # g = CausalGraph(flow)
+    # g.render_in_browser()
