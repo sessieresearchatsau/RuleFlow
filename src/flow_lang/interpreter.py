@@ -135,6 +135,8 @@ class FlowLang(Flow):
         """A directive to merge a particular group into a chain (a composite rule)"""
         rules: list[BaseRule] = cast(list[BaseRule], self.rule_set.rules)
         for i in range(len(rules)):
+            if rules[i].disabled:
+                 continue
             if rules[i].group == identifier:
                 head = rules[i]
                 for j in range(i + 1, len(rules)):
@@ -145,11 +147,10 @@ class FlowLang(Flow):
 
     def __compress_group(self, identifier: int | str):
         """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
-        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules) if rule.group == identifier]
+        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
+                                 if rule.group == identifier and not rule.disabled]
         # If any rule makes no changes, disable it.
         for rule in rules:
-            if rule.disabled:
-                continue
             rule_is_active: bool = False
             for selector in rule.selectors:
                 for s_char, t_char in zip(selector.selector, rule.target.selector):
@@ -176,8 +177,8 @@ if __name__ == "__main__":
     ABA -> AAB;
     A -> ABA;
     """
-    flow = FlowLang.from_file('rule_30.flow')
+    flow = FlowLang.from_file('eca.flow')
     flow.print()
-    # from core.graph import CausalGraph
-    # g = CausalGraph(flow)
-    # g.render_in_browser()
+    from core.graph import CausalGraph
+    g = CausalGraph(flow)
+    g.render_in_browser()

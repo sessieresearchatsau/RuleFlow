@@ -2,14 +2,14 @@
 @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
 
 // define the rules
+@compress(0);
 @merge(0);
-//@compress(0);
 (-pl[inf] -mr[0,inf]) {
     // BB_ --> _A_;
     // BAA --> _B_;
     // AAB --> _B_;
-    @decode(wns, AB, 126);  // rule 30
+    @decode(wns, AB, 86);
 }
 
 // Run n times
-@evolve(32);
+@evolve(16);

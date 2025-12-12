@@ -62,7 +62,7 @@ class BaseRule(RuleABC):
 
         # ======== Flags (that modify the internal rule behavior) ========
         # match() flags
-        self.space_range: tuple[int, int, int] = (0, 1, 1)  # the range of spaces that are matched
+        self.space_range: tuple[int, int] = (0, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
         self.offset: int = 0  # the offset to the index that selectors return.
         self.cmp: Literal["both", "og", "this", "ignore"] = "ignore"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
@@ -121,14 +121,18 @@ class BaseRule(RuleABC):
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
         if self.is_in_chain:
             return ()  # we do not run the rule outside the collective "self"
-        spaces: Sequence[SpaceState] = spaces[slice(*self.space_range)]
         out: list[RuleMatch] = []
-        for space in spaces:
+        for i, space in enumerate(spaces):
+            if self.space_range[0] > i:
+                continue
+            if i >= self.space_range[1]:
+                break
             chained: list[BaseRule] = []
             matches: list[tuple[int, int]] = []
             conflicts: set[int] = set()
             for self in self.chain:
-                # TODO check if disabled
+                if self.disabled:  # we must check if the rule has been disabled in case the rule is in a chain (has been merged)
+                    continue
                 for pattern in self.selectors:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type == 'literal':
@@ -138,12 +142,12 @@ class BaseRule(RuleABC):
                     elif pattern.type == 'range':
                         finds = iter((pattern.selector,))
                     else: continue
-                    for idx, span in enumerate(finds):
+                    for j, span in enumerate(finds):
                         if self.offset:
                             span = (span[0] + self.offset, span[1] + self.offset)
-                        if self.match_range[0] > idx:
+                        if self.match_range[0] > j:
                             continue
-                        if idx >= self.match_range[1]:
+                        if j >= self.match_range[1]:
                             break
                         if self.cmp != 'ignore':
                             conflicts.update(self._conflict_detector(matches, span))
