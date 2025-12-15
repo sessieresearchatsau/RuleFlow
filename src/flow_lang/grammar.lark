@@ -45,7 +45,7 @@ flags: flag+
 flag: FLAG_DEF
 
 // ------------------------------------------
-// Terminals (Lexer Rules)
+// Terminals
 // ------------------------------------------
 
 // Complex Literals
@@ -74,7 +74,7 @@ SIMPLE_LITERAL: /[a-zA-Z0-9_.*]+/
 %import common.NEWLINE
 COMMENT: /\/\/[^\n]*/
 
-// Directives (Example: @Universe: "A(B)A" or @Steps: 100)
+// Directives (Example: @Universe(ABA) or @Steps(100))
 DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
 DIRECTIVE_VALUE: /[^(\);)]+/
 directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
