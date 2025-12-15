@@ -1,0 +1,6 @@
+networkx
+pyvis
+lark
+ollama
+cellpylib
+matplotlib
