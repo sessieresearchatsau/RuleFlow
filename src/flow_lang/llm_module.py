@@ -3,6 +3,9 @@ from ollama import generate, GenerateResponse
 from typing import Literal, Any
 from functools import lru_cache
 
+# TODO: make the caller async!
+# TODO: Refine the SYSTEM prompts with context by providing the current rules and previous runs (if they exist)
+# TODO: implement a better cache system
 class LLMSelector:
     SYSTEM = r"""You are the "Selector," a specialized engine dedicated solely to generating Regular Expressions.
 
