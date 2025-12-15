@@ -529,7 +529,7 @@ class Flow:
         else:
             for event in self.events:
                 lines.append('\t'.join(_str_gen(event)))
-        string: str = '\n'.join(lines).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m')
+        string: str = '\n'.join(lines).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m')  # TODO: make sure to generalize this by adding the parameter to control it... this is just for testing
         if print_to_terminal:
             print(string)
         return string
