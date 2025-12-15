@@ -179,6 +179,6 @@ if __name__ == "__main__":
     """
     flow = FlowLang.from_file('eca.flow')
     flow.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(flow)
-    g.render_in_browser()
+    # from core.graph import CausalGraph
+    # g = CausalGraph(flow)
+    # g.render_in_browser()
