@@ -29,7 +29,8 @@ class Signal:
 
 # ==== engine ====
 
-
+# TODO: "from pyrsistent import pvector" we could use this data structure for cells rather than list.
+# TODO: maybe make this persistent so that we dont need an instance for each cell... instead we put the created_at and destroyed_at trackers as values in arrays (stored in SpaceState).
 @dataclass
 class Cell:
     """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
