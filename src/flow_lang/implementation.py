@@ -119,6 +119,7 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
+        top_self = self  # for og reference when we loop through self (comment out to show a great bug example when two universes don't evolve in parallel)
         if self.is_in_chain:
             return ()  # we do not run the rule outside the collective "self"
         out: list[RuleMatch] = []
@@ -130,7 +131,7 @@ class BaseRule(RuleABC):
             chained: list[BaseRule] = []
             matches: list[tuple[int, int]] = []
             conflicts: set[int] = set()
-            for self in self.chain:
+            for self in top_self.chain:
                 if self.disabled:  # we must check if the rule has been disabled in case the rule is in a chain (has been merged)
                     continue
                 for pattern in self.selectors:
