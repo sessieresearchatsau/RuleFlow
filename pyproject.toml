@@ -1,6 +1,14 @@
 [project]
 name = "ruleflow"
 version = "0.1.0"
-description = "Add your description here"
+description = "A python framework implementing the Sessie algorithms and Causal Network analysis tools."
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "cellpylib>=2.4.0",
+    "lark>=1.3.1",
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "ollama>=0.6.1",
+    "pyrsistent>=0.20.0",
+    "pyvis>=0.3.2",
+]

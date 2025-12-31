@@ -1,13 +1,9 @@
 // set the initial state
-@Init(AB);
-
-(-a -nib -nct -nds) {
-    "All those Bs at the end of the sequence, but more than 3 Bs." ><;
-}
+@init(AB);
 
 // define the sequential rules
 ABA -> AAB;
 A -> ABA;
 
 // Run n times
-@Evolve(40);
+@evolve(40);

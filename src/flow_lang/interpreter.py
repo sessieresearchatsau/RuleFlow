@@ -108,8 +108,7 @@ class FlowLang(Flow):
 
     def __init__(self, lang: str, init_space: Sequence[
                                                   str] | str | None = None):  # init_space can be none if the @init directive is defined.
-        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(
-            lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         if isinstance(init_space, str):
             init_space = (init_space,)
         if init_space is None:
@@ -146,6 +145,7 @@ class FlowLang(Flow):
                 break
 
     def __compress_group(self, identifier: int | str):
+        # TODO: this should always run for ALL rules as this increases performance of evolution
         """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
         rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
                                  if rule.group == identifier and not rule.disabled]

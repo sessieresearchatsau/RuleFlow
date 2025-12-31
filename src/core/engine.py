@@ -1,10 +1,8 @@
-from typing import Any, Callable, Sequence, NamedTuple, Iterator, Generator
+from typing import Any, Callable, Sequence, MutableSequence, NamedTuple, Iterator, Generator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from copy import copy, deepcopy
 import re
-
-
 
 # helper
 class Signal:
@@ -28,10 +26,7 @@ class Signal:
 
 
 # ==== engine ====
-
-# TODO: "from pyrsistent import pvector" we could use this data structure for cells rather than list.
-# TODO: maybe make this persistent so that we dont need an instance for each cell... instead we put the created_at and destroyed_at trackers as values in arrays (stored in SpaceState).
-@dataclass
+@dataclass(slots=True)  # we use slots to get C-like mutable struct behavior (NamedTuple is similar but immutable)
 class Cell:
     """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
@@ -42,7 +37,6 @@ class Cell:
 
     Future Considerations:
     - Add additional metadata/tags fields.
-    - TODO: maybe add modified_at flags (so that swap and insert operations are tracked)?
     """
     quanta: Any
 
@@ -76,10 +70,6 @@ class SpaceState(ABC):
     - All official SpaceStates must be created in this engine.py file. If one wants to create a 4D SpaceState, for instance, they must inherit from this, implement the methods, etc.
     - All SpaceStates that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
     """
-
-    def __init__(self) -> None:
-        if not hasattr(self, 'cells'):  # this insures that cells is properly created in inherited classes
-            raise NotImplementedError('The self.cells field must be set in the constructor of classes inheriting from BaseSpaceState BEFORE the BaseSpaceState constructor is called.')
 
     @abstractmethod
     def __str__(self):
@@ -125,11 +115,12 @@ class SpaceState(ABC):
 
 
 class SpaceState1D(SpaceState):
-    """A SpaceState for a single dimensions (string) of space units (cells)."""
+    """A SpaceState for a single dimensions (string) of space units (cells).
 
-    def __init__(self, cells: list[Cell]) -> None:
-        self.cells: list[Cell] = cells
-        super().__init__()
+    If sparse is set to True, a persistent data structure is used to share pointers between changes (can save a lot of memory)."""
+
+    def __init__(self, cells: MutableSequence[Cell]) -> None:
+        self.cells: MutableSequence[Cell] = cells
 
     def __str__(self):
         return ''.join((str(c) for c in self.cells))
@@ -151,8 +142,7 @@ class SpaceState1D(SpaceState):
 
     def __copy__(self) -> SpaceState1D:
         new_space: SpaceState1D = object.__new__(self.__class__)  # create new object without using init
-        for k, v in self.__dict__.items():  # copy all fields only once
-            setattr(new_space, k, copy(v) if isinstance(v, list) else v)
+        new_space.cells = copy(self.cells)
         return new_space
 
     def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell]:
@@ -160,22 +150,6 @@ class SpaceState1D(SpaceState):
 
     def get_all_cells(self) -> Sequence[Cell]:
         return self.cells
-
-    # Great debugging example here:
-    # 1. breakpoint in the evolve_n() function and look for the problematic step.
-    # 2. Step through the code from there to finally see that this find function is not working properly.
-    # 3. Fix this find function by indenting the `instances` decrementer.
-    # def find(self, subspace: Sequence[Cell], instances: int = 1) -> list[int]:
-    #     subspace_len: int = len(subspace)
-    #     matches: list[int] = []
-    #     for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
-    #         if instances == 0:
-    #             break
-    #         if all(self.cells[i + j] == subspace[j] for j in range(subspace_len)):
-    #             matches.append(i)
-    #         if instances != -1:
-    #             instances -= 1
-    #     return matches
 
     def find(self, subspace: Sequence[Cell]) -> Iterator[tuple[int, int]]:
         subspace_len: int = len(subspace)
@@ -240,6 +214,7 @@ class SpaceState1D(SpaceState):
             temp = self.cells[end:end + k]  # delete "after" but remember it
             self.cells[end:end + k] = ()
             self.cells[start:start] = temp  # insert "after" to "before"
+        if self.sparse: self.cells.commit()
         return DeltaCells((), ())
 
     def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCells:

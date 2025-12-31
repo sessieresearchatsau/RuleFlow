@@ -41,7 +41,7 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(10)
+    sss.evolve_n(8000)
     sss.print()
     # from core.graph import CausalGraph
     # g = CausalGraph(sss)
