@@ -13,7 +13,7 @@ from core.engine import (
     Rule as RuleABC,
     RuleMatch,
     DeltaSpace,
-    DeltaCells,
+    DeltaCell,
     Signal
 )
 
@@ -165,7 +165,8 @@ class BaseRule(RuleABC):
                 )
         return out
 
-    def _aggregate_DeltaCells(self, delta_cells: list[DeltaCells]) -> DeltaCells:
+    @staticmethod
+    def _aggregate_DeltaCells(delta_cells: list[DeltaCell]) -> DeltaCell:
         """Helper function to aggregate many DeltaCells into a single DeltaCells"""
         if len(delta_cells) == 1:
             return delta_cells[0]
@@ -174,19 +175,24 @@ class BaseRule(RuleABC):
         for delta_cell in delta_cells:
             destroyed_cells.extend(delta_cell.destroyed_cells)
             new_cells.extend(delta_cell.new_cells)
-        return DeltaCells(destroyed_cells, new_cells)
+        return DeltaCell(destroyed_cells, new_cells)
 
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | None) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | None) -> DeltaCell:
         raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, deepcopy(target))`)')
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
-        og_self: BaseRule = self.chain[0]  # because self is reassigned when there are self has a chain of followers.
+        top_self: BaseRule = self  # because self is reassigned when there are self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
+            # submitted updates
+            submitted_spaces: list[SpaceState | None] = []
+            submitted_cell_deltas: list[DeltaCell] = []  # list of (aggregated) DeltaCells that must align with the output space
+
+            # state of the sim
             prev_space: SpaceState = cast(SpaceState, rule_match.space)
             current_space: SpaceState = prev_space if self.no_initial_branch else copy(prev_space)
-            cell_deltas: list[DeltaCells] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
+            cell_deltas: list[DeltaCell] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
             pl: int = 0  # parallel executions
             bl: int = 0  # branch executions
             matches_bound: int = len(rule_match.matches) - 1
@@ -212,15 +218,16 @@ class BaseRule(RuleABC):
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
                     self.on_conflict.emit(rule_match, idx)
                     if self.crp in ('branch', 'branch_nbl'):
-                        if self.crp == 'branch' and bl == self.branch_limit:
+                        if self.crp == 'branch' and bl > self.branch_limit:
                             continue
                         branch: SpaceState = copy(prev_space)
-                        dc: DeltaCells = self._call_space_modifier(branch, selector, target)
-                        modified_spaces.append(DeltaSpace(
-                            input_space=prev_space,
-                            output_space=branch if not self.no_delta_submit else None,
-                            cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else dc
-                        ))
+                        dc: DeltaCell = self._call_space_modifier(branch, selector, target)
+                        submitted_spaces.append(
+                            branch if not self.no_delta_submit else None
+                        )
+                        submitted_cell_deltas.append(
+                            DeltaCell((), ()) if self.no_causality_tracking else dc
+                        )
                     elif self.crp == 'skip':
                         continue  # just skip this selector
                     elif self.crp == 'break':
@@ -235,11 +242,12 @@ class BaseRule(RuleABC):
 
                 # if pl is at max, submit modified space
                 if pl == self.parallel_execution_limit or idx == matches_bound:  # if parallel execution limit is reached OR no more matches for the space
-                    modified_spaces.append(DeltaSpace(
-                        input_space=prev_space,
-                        output_space=current_space if not self.no_delta_submit else None,
-                        cell_deltas=DeltaCells((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
-                    ))
+                    submitted_spaces.append(
+                        current_space if not self.no_delta_submit else None
+                    )
+                    submitted_cell_deltas.append(
+                        DeltaCell((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
+                    )
                     pl = 0
                     cell_deltas.clear()
                     self.on_execution.emit(rule_match, idx)
@@ -251,8 +259,15 @@ class BaseRule(RuleABC):
                         self.on_branch.emit(rule_match, idx)
                     else:
                         break  # break out of loop if no branches are supposed to be made.
+            modified_spaces.append(
+                DeltaSpace(  # use tuples for efficient storage... more efficient that way.
+                    input_space=prev_space,
+                    output_space=tuple(submitted_spaces),
+                    cell_deltas=tuple(submitted_cell_deltas)
+                )
+            )
 
-        self = og_self  # make sure we are referring to the top of the chain version of "self"
+        self = top_self  # make sure we are referring to the top of the chain version of "self"
         # ensure the lifespan is enforced
         self.lifespan -= 1  # will not affect infinity if so set
         if self.lifespan == 0 and modified_spaces:
@@ -262,32 +277,32 @@ class BaseRule(RuleABC):
 
 
 class SubstitutionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
         return space.substitute(selector, deepcopy(target))
 
 
 class InsertionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
         return space.insert(selector[0], deepcopy(target))
 
 
 class OverwriteRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
         return space.overwrite(selector[0], deepcopy(target))
 
 
 class DeletionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCell:
         return space.delete(selector)
 
 
 class ShiftingRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: int) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: int) -> DeltaCell:
         return space.shift(selector, k=target)
 
 
 class ReverseRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCells:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCell:
         return space.reverse(selector)
 
 

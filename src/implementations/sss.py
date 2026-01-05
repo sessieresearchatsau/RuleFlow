@@ -31,7 +31,7 @@ class ReplacementRule(RuleABC):
         old_space: SpaceState = cast(SpaceState, rule_matches[0].space)  # we cast to satisfy the type checker
         new_space: SpaceState = copy(old_space)
         cell_deltas = new_space.substitute(selector, deepcopy(self.target_cells))
-        return (DeltaSpace(old_space, new_space, cell_deltas),)
+        return (DeltaSpace(old_space, (new_space,), (cell_deltas,)),)
 
 
 class SSS(Flow):
@@ -41,7 +41,7 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(8000)
+    sss.evolve_n(20)
     sss.print()
     # from core.graph import CausalGraph
     # g = CausalGraph(sss)

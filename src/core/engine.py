@@ -164,19 +164,19 @@ class SpaceState1D(SpaceState):
         for m in matches: yield m.span()
 
     # ==== Custom Modifiers ====
-    def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCells:
+    def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCell:
         start, end = selector
         destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
         self.cells[start:end] = new
-        return DeltaCells(deepcopy(destroyed), new)
+        return DeltaCell(deepcopy(destroyed), new)
 
-    def insert(self, selector: int, new: Sequence[Cell]) -> DeltaCells:
+    def insert(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
         if selector < 0:
             selector = len(self.cells) + selector + 1
         self.cells[selector:selector] = new
-        return DeltaCells((), new)
+        return DeltaCell((), new)
 
-    def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCells:
+    def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
         _destroyed: tuple[Cell, ...] = ()
         _new: tuple[Cell, ...] = ()
         if selector < 0:
@@ -192,15 +192,15 @@ class SpaceState1D(SpaceState):
             except IndexError:
                 self.cells.append(new_char)
             _new += (new_char,)
-        return DeltaCells(deepcopy(_destroyed), _new)
+        return DeltaCell(deepcopy(_destroyed), _new)
 
-    def delete(self, selector: tuple[int, int]) -> DeltaCells:
+    def delete(self, selector: tuple[int, int]) -> DeltaCell:
         start, end = selector
         destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
         self.cells[start:end] = ()
-        return DeltaCells(deepcopy(destroyed), ())
+        return DeltaCell(deepcopy(destroyed), ())
 
-    def shift(self, selector: tuple[int, int], k: int) -> DeltaCells:
+    def shift(self, selector: tuple[int, int], k: int) -> DeltaCell:
         start, end = selector
         if end < 0: end = len(self.cells) + end
         if start < 0: start = len(self.cells) + start
@@ -215,9 +215,9 @@ class SpaceState1D(SpaceState):
             self.cells[end:end + k] = ()
             self.cells[start:start] = temp  # insert "after" to "before"
         if self.sparse: self.cells.commit()
-        return DeltaCells((), ())
+        return DeltaCell((), ())
 
-    def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCells:
+    def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCell:
         start1, end1 = selector1
         if end1 < 0: end1 = len(self.cells) + end1
         if start1 < 0: start1 = len(self.cells) + start1
@@ -234,12 +234,12 @@ class SpaceState1D(SpaceState):
         temp2 = self.cells[start2:end2]
         self.cells[start2:end2] = temp1
         self.cells[start1:end1] = temp2
-        return DeltaCells((), ())
+        return DeltaCell((), ())
 
-    def reverse(self, selector: tuple[int, int]) -> DeltaCells:
+    def reverse(self, selector: tuple[int, int]) -> DeltaCell:
         start, end = selector
         self.cells[start:end] = self.cells[start:end][::-1]
-        return DeltaCells((), ())
+        return DeltaCell((), ())
 
 
 class SpaceState2D(SpaceState):
@@ -333,7 +333,7 @@ class RuleSet:
         return applied_rules
 
 
-class DeltaCells(NamedTuple):  # the cells that were created and destroyed by some SpaceState.modifier() method.
+class DeltaCell(NamedTuple):  # the cells that were created and destroyed by some SpaceState.modifier() method.
     destroyed_cells: Sequence[Cell]
     new_cells: Sequence[Cell]
 
@@ -344,11 +344,11 @@ class DeltaCells(NamedTuple):  # the cells that were created and destroyed by so
 class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
-    output_space: SpaceState | None  # can be none
-    cell_deltas: DeltaCells
+    output_space: Sequence[SpaceState | None]  # can include many children branches
+    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array
 
     def __bool__(self) -> bool:
-        return bool(self.output_space) or bool(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding deleting?
+        return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding or deleting?
 
 
 class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
@@ -360,7 +360,7 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Delt
         return any(self.space_deltas)  # if any changes were recorded.
 
 
-@dataclass
+@dataclass(slots=True)
 class Event:
     time: int  # also known as time - should be unique to every event
     space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
@@ -371,12 +371,13 @@ class Event:
     causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
     @property  # maybe cache this?
-    def affected_cells(self) -> Iterator[DeltaCells]:
+    def affected_cells(self) -> Iterator[DeltaCell]:
         """Returns all cell deltas"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                if space_delta.cell_deltas:
-                    yield space_delta.cell_deltas
+                for cell_delta in space_delta.cell_deltas:
+                    if cell_delta:
+                        yield cell_delta
 
     @property  # maybe cache this?
     def causally_connected_events(self) -> Iterator[int]:
@@ -390,11 +391,12 @@ class Event:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                if space_delta.output_space:
-                    yield space_delta.output_space
+                for space in space_delta.output_space:
+                    if space is not None:
+                        yield space
 
     def __str__(self):
-        return '[' + ', '.join((str(space) for space in self.spaces)) + ']'
+        return '[' + ', '.join((str(space) for space in self.spaces)) + ']'  # TODO remove this to a dedication printer
 
 
 class Flow:
@@ -403,7 +405,7 @@ class Flow:
     def __init__(self, rule_set: RuleSet,
                  initial_space: Sequence[SpaceState]):
         self.events: list[Event] = [
-            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, i, DeltaCells((), ())) for i in initial_space)), None)])
+            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be i as well so that next evolve() works.
         ]
         self.rule_set: RuleSet = rule_set  # can be changed at any time to provide a new set of rules.
         self.initial_space: Sequence[SpaceState] = initial_space  # just useful to keep track of, but only used in .clear_evolution()
@@ -447,10 +449,11 @@ class Flow:
         current_event_idx: int = self.current_event_idx
         for ar in applied_rules:
             for sd in ar.space_deltas:
-                for cell in sd.cell_deltas.new_cells:
-                    cell.created_at = current_event_idx
-                for cell in sd.cell_deltas.destroyed_cells:
-                    cell.destroyed_at = current_event_idx
+                for dc in sd.cell_deltas:
+                    for cell in dc.new_cells:
+                        cell.created_at = current_event_idx
+                    for cell in dc.destroyed_cells:
+                        cell.destroyed_at = current_event_idx
 
         # process causal distance to creation
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
