@@ -1,6 +1,8 @@
 from pyrsistent import pvector, v
 
-v = pvector([1, 2, 3, 4, 5, 6, 7, 8])
-v1 = v[:2] + pvector([0, 0]) + v[-2:]
-print(v, v1, sep='\n')
-
+v = pvector([1, 2, 3])
+# e = v.evolver()
+# e[1] = 2
+# s = e.persistent()
+s = v[:1] + pvector([1, 2]) + v[-1:]
+print(v, s, type(s), sep='\n')

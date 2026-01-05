@@ -1,6 +1,6 @@
-from typing import Any, Callable, Sequence, MutableSequence, NamedTuple, Iterator, Generator
+from typing import Any, Callable, Sequence, MutableSequence, NamedTuple, Iterator
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from copy import copy, deepcopy
 import re
 
@@ -102,7 +102,7 @@ class SpaceState(ABC):
         """Enables getting subspaces with slicing: space[0][1] of an N^2 space for instance."""
 
     @abstractmethod
-    def get_all_cells(self) -> Sequence[Cell]:
+    def get_all_cells(self) -> Sequence[Cell] | Iterator[Cell]:
         """Returns all the cells that live in the SpaceState... regardless of the spaces dimensions.
         This is useful for modifying all the cells in the SpaceState."""
 
@@ -214,7 +214,6 @@ class SpaceState1D(SpaceState):
             temp = self.cells[end:end + k]  # delete "after" but remember it
             self.cells[end:end + k] = ()
             self.cells[start:start] = temp  # insert "after" to "before"
-        if self.sparse: self.cells.commit()
         return DeltaCell((), ())
 
     def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCell:

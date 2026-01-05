@@ -1,2 +1,4 @@
-a = bytearray([1, 2, 255, 4, 5, 6])
+from array import array
+a = bytearray('ABCD', 'utf-8')
+a[1:3] = bytes(ord(c) for c in 'ab')
 print(a)

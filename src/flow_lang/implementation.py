@@ -73,7 +73,7 @@ class BaseRule(RuleABC):
         self.no_delta_submit: bool = False  # if no new states are to be submitted (even if they do occur)
         self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
-        self.branch_origin: Literal["prev", "current"] = "prev"
+        self.branch_origin: Literal["prev", "current"] = "prev"  # does not apply to the first branch from previous event.
         self.crp: Literal["branch", "branch_nbl", "skip", "break", "ignore"] = "ignore"  # conflict resolution protocol. Note: at some point this could be extended to exclude BOTH conflicts, not just the one conflicting with the other.
 
         # rule life flags
@@ -167,7 +167,7 @@ class BaseRule(RuleABC):
 
     @staticmethod
     def _aggregate_DeltaCells(delta_cells: list[DeltaCell]) -> DeltaCell:
-        """Helper function to aggregate many DeltaCells into a single DeltaCells"""
+        """Helper function to aggregate many DeltaCells into a single DeltaCell"""
         if len(delta_cells) == 1:
             return delta_cells[0]
         destroyed_cells: list[Cell] = []
@@ -220,7 +220,7 @@ class BaseRule(RuleABC):
                     if self.crp in ('branch', 'branch_nbl'):
                         if self.crp == 'branch' and bl > self.branch_limit:
                             continue
-                        branch: SpaceState = copy(prev_space)
+                        branch: SpaceState = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         dc: DeltaCell = self._call_space_modifier(branch, selector, target)
                         submitted_spaces.append(
                             branch if not self.no_delta_submit else None
