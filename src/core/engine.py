@@ -1,7 +1,7 @@
 from typing import Any, Callable, Sequence, MutableSequence, NamedTuple, Iterator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from copy import copy, deepcopy
+from copy import copy
 import re
 
 # helper
@@ -28,7 +28,7 @@ class Signal:
 # ==== engine ====
 @dataclass(slots=True)  # we use slots to get C-like mutable struct behavior (NamedTuple is similar but immutable)
 class Cell:
-    """A single mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy().
+    """A single (technically) mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy() and hash().
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
     It is at this smallest unit of space that we care about causality.
 
@@ -42,8 +42,8 @@ class Cell:
 
     # NOTE: the metadata is the ONLY thing that makes cells differentiable (other than quanta of course)
     # Metadata regarding the creation and destruction of the cell... stored as indices to the events array.
-    created_at: int = 0
-    destroyed_at: int = 0
+    created_at: int = 0  # this is the ONLY piece important metadata needed for a causality graph (can only be created one, so one event index)
+    destroyed_at: tuple[int] = ()  # OPTIONAL metadata useful for analysis. Is an array of event indices (multiple indices for multiway systems)
 
     def __str__(self):
         """String representation of quanta"""
@@ -56,8 +56,19 @@ class Cell:
         """Semantic equality (use is for true equality)"""
         return self.quanta == other.quanta
 
-    def __deepcopy__(self, memo) -> Cell:  # force it to use __copy__
-        return copy(self)
+    # noinspection PyDunderSlots,PyUnresolvedReferences
+    def __copy__(self) -> Cell:
+        n: Cell = object.__new__(self.__class__)
+        n.quanta = self.quanta
+        n.created_at = self.created_at
+        n.destroyed_at = self.destroyed_at
+        return n
+
+    def __deepcopy__(self, memo) -> Cell:
+        return self.__copy__()  # force normal copy() behavior
+
+    def __hash__(self):  # implemented to make Cell hashable (so can be used as keys in dict for instance)
+        return hash(self.quanta)
 
 
 class SpaceState(ABC):
@@ -66,7 +77,7 @@ class SpaceState(ABC):
     Policies:
     - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
     - All modifier methods must make sure to create new cells or cell copies if causality is to be tracked properly using the DeltaSets.
-    - All modifier methods (that create/destroy cells) should return DeltaCellSet containing the destroyed and created cells. The destroyed cells should be cloned/deep-copied before passing to and returning DeltaCellSet... this is so that multiple SpaceState(s) that share the same cells can have different cells destroyed and still track cell causality for each respective universe without overriding the destroyed_at: Event field of the same cell multiple times.
+    - All modifier methods (that create/destroy cells) should return DeltaCellSet containing the destroyed and created cells.
     - All official SpaceStates must be created in this engine.py file. If one wants to create a 4D SpaceState, for instance, they must inherit from this, implement the methods, etc.
     - All SpaceStates that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
     """
@@ -118,6 +129,7 @@ class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells).
 
     If sparse is set to True, a persistent data structure is used to share pointers between changes (can save a lot of memory)."""
+    __slots__ = ('cells',)
 
     def __init__(self, cells: MutableSequence[Cell]) -> None:
         self.cells: MutableSequence[Cell] = cells
@@ -168,7 +180,7 @@ class SpaceState1D(SpaceState):
         start, end = selector
         destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
         self.cells[start:end] = new
-        return DeltaCell(deepcopy(destroyed), new)
+        return DeltaCell(destroyed, new)
 
     def insert(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
         if selector < 0:
@@ -177,8 +189,8 @@ class SpaceState1D(SpaceState):
         return DeltaCell((), new)
 
     def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
-        _destroyed: tuple[Cell, ...] = ()
-        _new: tuple[Cell, ...] = ()
+        destroyed: tuple[Cell, ...] = ()
+        new_: tuple[Cell, ...] = ()  # only here due to "_" being a cursor jump/skip operator
         if selector < 0:
             selector = len(self.cells) + selector
         for i in range(len(new)):
@@ -187,18 +199,18 @@ class SpaceState1D(SpaceState):
             if new_char.quanta == '_':  # skip these
                 continue
             try:
-                _destroyed += (self.cells[idx],)
+                destroyed += (self.cells[idx],)
                 self.cells[idx] = new_char
             except IndexError:
                 self.cells.append(new_char)
-            _new += (new_char,)
-        return DeltaCell(deepcopy(_destroyed), _new)
+            new_ += (new_char,)
+        return DeltaCell(destroyed, new_)
 
     def delete(self, selector: tuple[int, int]) -> DeltaCell:
         start, end = selector
         destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
         self.cells[start:end] = ()
-        return DeltaCell(deepcopy(destroyed), ())
+        return DeltaCell(destroyed, ())
 
     def shift(self, selector: tuple[int, int], k: int) -> DeltaCell:
         start, end = selector
@@ -398,6 +410,8 @@ class Event:
         return '[' + ', '.join((str(space) for space in self.spaces)) + ']'  # TODO remove this to a dedication printer
 
 
+# We use these noinspections because of stupid PyCharm bug regarding slots and dataclasses that has not been fixed...
+# noinspection PyDunderSlots,PyUnresolvedReferences
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
@@ -452,7 +466,7 @@ class Flow:
                     for cell in dc.new_cells:
                         cell.created_at = current_event_idx
                     for cell in dc.destroyed_cells:
-                        cell.destroyed_at = current_event_idx
+                        cell.destroyed_at += (current_event_idx,)  # first one, of course, will be the main lineage
 
         # process causal distance to creation
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)

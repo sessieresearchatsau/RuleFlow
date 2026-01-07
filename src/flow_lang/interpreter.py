@@ -27,7 +27,7 @@ def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector 
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
     if s_type == "literal":
-        return Selector(type=s_type, selector=tuple((Cell(c) for c in s_value)))
+        return Selector(type=s_type, selector=tuple((Cell(c) for c in s_value)))  # IMPORTANT NOTE: we use tuple because it uses less memory and is hashable so that the cache system of PVec works.
     elif s_type == "regex":
         return Selector(type=s_type, selector=re.compile(s_value))
     elif s_type == "range":
@@ -177,8 +177,8 @@ if __name__ == "__main__":
     ABA -> AAB;
     A -> ABA;
     """
-    flow = FlowLang.from_file('eca.flow')
+    flow = FlowLang.from_file('sss.flow')
     flow.print()
-    # from core.graph import CausalGraph
-    # g = CausalGraph(flow)
-    # g.render_in_browser()
+    from core.graph import CausalGraph
+    g = CausalGraph(flow)
+    g.render_in_browser()

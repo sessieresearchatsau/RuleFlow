@@ -1,8 +1,23 @@
 """Persistent Vector Implementation (for sparse storage)"""
 from pyrsistent import PVector, pvector
 from pyrsistent.typing import PVectorEvolver
-from typing import MutableSequence, overload, Sequence
+from typing import MutableSequence, Sequence, overload
 from core.engine import Cell
+
+
+# IMPORTANT NOTE: Sequence[Cell] must really be tuple[Cell] for there to be any benefit to using the Cache!!!
+__bytes_cache__ = {
+    # globally cached bytes will go here where the key is an immutable array of Cells and the value is the compiled bytes
+}
+def __retrieve_bytes__(key: Sequence[Cell]) -> bytes:
+    """Used to retrieve the pre-compiled bytearrays from the global cache (fills up quickly for our application)."""
+    try:  # we use this because the cache "hit" is most common... so a bit faster than doing an if statement when key exists in the cache already.
+        return __bytes_cache__[key]
+    except KeyError:
+        __bytes_cache__[key] = (r:=bytes(ord(c.quanta) for c in key))
+        return r
+    except TypeError:  # if key is not hashable:
+        return __retrieve_bytes__(tuple(key))
 
 
 class PVec(MutableSequence):
@@ -12,6 +27,12 @@ class PVec(MutableSequence):
         self.pvec: PVector[Cell] = pvector(elems)
         self.evolver: PVectorEvolver[Cell] | None = None
         self.search_buffer: bytearray = bytearray((ord(c.quanta) for c in elems))
+
+    def __str__(self):
+        return 'Vec' + str(self.pvec)[7:]
+
+    def __repr__(self):
+        return str(self)
 
     # utility functions
     def edit(self):  # we use this rather than .is_dirty() to minimize space use of an evolver object.
@@ -44,14 +65,8 @@ class PVec(MutableSequence):
     def __copy__(self):
         return self.branch()
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo):  # force it to use self.branch for safety
         return self.branch()
-
-    def __str__(self):
-        return 'Vec' + str(self.pvec)[7:]
-
-    def __repr__(self):
-        return str(self)
 
     # ================ Viewers ================
     def __len__(self):
@@ -87,17 +102,18 @@ class PVec(MutableSequence):
             else: # Structural Change: because the evolver cannot handle length changes (deletions or insertions)
                 self.commit()  # flush any existing point-updates to the pvec
                 self.pvec = self.pvec[:start] + pvector(value) + self.pvec[stop:]  # does not use the Evolver object as this creates a new node.
-            self.search_buffer[start:stop] = bytes(ord(c.quanta) for c in value)
-        elif isinstance(index, int):
-            value: Cell
-            self.edit()
-            self.evolver[index] = value
-            self.search_buffer[index] = ord(value.quanta)
+            self.search_buffer[start:stop] = __retrieve_bytes__(value)
+            return
+        # if isinstance(index, int):
+        value: Cell
+        self.edit()
+        self.evolver[index] = value
+        self.search_buffer[index] = ord(value.quanta)
 
     def __delitem__(self, index: int | slice):
         if isinstance(index, int):
             self[index:index+1] = ()
-        else:
+        else:  # if index is a slice
             self[index] = ()
 
     def append(self, value: Cell):
@@ -110,7 +126,7 @@ class PVec(MutableSequence):
         """Extend with values"""
         self.edit()
         self.evolver.extend(values)
-        self.search_buffer.extend(ord(c.quanta) for c in values)
+        self.search_buffer.extend(__retrieve_bytes__(values))
 
     def insert(self, index, value):
         """Insert value at index"""
