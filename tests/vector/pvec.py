@@ -1,5 +1,5 @@
 import unittest
-from src.core.pvec import PVec
+from src.core.vec import PVec
 from src.core.engine import Cell
 
 
@@ -92,6 +92,36 @@ class TestPVec(unittest.TestCase):
 
         # Should be back to "ABCDE"
         self.assertEqual(self.vec.search_buffer, bytearray(b"ABCDE"))
+
+    def test_finditer_pattern_matching(self):
+        """Test regex pattern matching via finditer on the search buffer."""
+        chars = "ABABA"
+        self.vec = PVec([Cell(c) for c in chars])
+
+        # 1. Test basic pattern match for "ABA"
+        # Should find two overlapping matches if using regex,
+        # but standard finditer usually finds non-overlapping.
+        matches = list(self.vec.finditer(b"ABA"))
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].start(), 0)
+
+        # 2. Test after a point update (buffer sync check)
+        # Change "ABABA" -> "ABXBA"
+        self.vec[2] = Cell("X")
+        matches = list(self.vec.finditer(b"BX"))
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].start(), 1)
+
+        # 3. Test structural change
+        # "ABXBA" -> "ABX_Y_BA" (Insert Y)
+        self.vec[3:3] = [Cell("Y")]
+        matches = list(self.vec.finditer(b"XBA"))
+        # In "ABXYBA", "XBA" should not exist, but "XYB" should
+        self.assertEqual(len(list(self.vec.finditer(b"XBA"))), 0)
+
+        xyb_matches = list(self.vec.finditer(b"XYB"))
+        self.assertEqual(len(xyb_matches), 1)
+        self.assertEqual(xyb_matches[0].start(), 2)
 
 
 if __name__ == '__main__':

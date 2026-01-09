@@ -1,4 +1,11 @@
-"""Persistent Vector Implementation (for sparse storage)"""
+"""Vector Implementation (Custom fit for engine) to be OPTIONALLY used as the Sequence of Cells for the StateSpace.
+
+
+==== FUTURE CONSIDERATIONS ====
+- Add a new backend for persistent vectors (using Rope of Finger data structures) to solve the structural edit problem
+with the current trie-based pvector data structure.
+    - Consider implementing these in pure C and making a python interface for maximum performance.
+"""
 from pyrsistent import PVector, pvector
 from pyrsistent.typing import PVectorEvolver
 from typing import MutableSequence, Sequence, Literal, Iterator, Type, overload
@@ -53,7 +60,39 @@ def set_regex_backend(m: Literal['re', 'regex']):
 
 
 # ================================ Vector Implementation ================================
-# TODO: now implement this for the StateSpace default data structure and the FlowLang (remember that search buffer must always be branched for multi-ways.)
+class VecABC(MutableSequence):
+
+    # utility functions
+    def edit(self):
+        """Enter edit mode (for immutable/persistent internal vectors)."""
+        pass
+
+    def commit(self):
+        """Commit changes (for immutable/persistent internal vectors)."""
+        pass
+
+    def branch(self) -> PVec:
+        """Branch the current vector into a new vector"""
+        pass
+
+    def branch_search_buffer(self, reconstruct_from_pvec: bool = False) -> None:
+        """Create new search buffer (useful for multi-ways). If using from_pvec, it will be reconstructed directly from the cells, otherwise just copied."""
+        pass
+
+    def __copy__(self):
+        return self.branch()
+
+    def __deepcopy__(self, memo):  # force it to use self.branch for safety
+        return self.branch()
+
+
+class Vec(VecABC):
+    pass
+
+
+# TODO: finish the ABCVec
+# TODO: implement the list based Vec
+# TODO: update the FlowLang to use the Vectors here as the default starting sequences
 class PVec(MutableSequence):
     __slots__ = ('pvec', 'evolver', 'search_buffer')
 

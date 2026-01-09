@@ -129,7 +129,7 @@ class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells).
 
     If sparse is set to True, a persistent data structure is used to share pointers between changes (can save a lot of memory)."""
-    __slots__ = ('cells',)
+    __slots__ = 'cells',
 
     def __init__(self, cells: MutableSequence[Cell]) -> None:
         self.cells: MutableSequence[Cell] = cells
@@ -168,12 +168,6 @@ class SpaceState1D(SpaceState):
         for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
             if all(self.cells[i + j] == subspace[j] for j in range(subspace_len) if subspace[j].quanta != '_'):
                 yield i, i + subspace_len
-
-    def regex_find(self, pattern: re.Pattern) -> Iterator[tuple[int, int]]:
-        matches: Iterator[re.Match[str]] = pattern.finditer(
-            ''.join((str(c.quanta) for c in self.cells))
-        )
-        for m in matches: yield m.span()
 
     # ==== Custom Modifiers ====
     def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCell:
