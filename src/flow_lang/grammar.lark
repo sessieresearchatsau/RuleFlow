@@ -17,13 +17,16 @@ instruction_sequence: (instruction ";")+
 // Core Instruction Definition
 // ------------------------------------------
 
-instruction: [selector*] operator [selector] [flags]
+instruction: [selector*] operator [target*] [flags]
 
-// --- Selectors ---
+// --- Selector ---
 selector: regex_term
         | llm_term
         | range_term
         | literal_term
+
+// --- Target ---
+target: literal_term
 
 // We define these as specific terminals to prevent ambiguity
 regex_term: REGEX_LITERAL

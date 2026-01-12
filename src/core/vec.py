@@ -6,6 +6,7 @@
 ==== FUTURE CONSIDERATIONS ====
 - Add a new backend for persistent vectors (using Rope or Finger data structures) to solve the structural edit problem
 with the current trie-based pvector data structure.
+This would likely be a significant time commitment to implement properly... so do this in the future only when truly needed.
     - Consider implementing these in pure C and making a python interface for maximum performance.
 """
 from pyrsistent import PVector, pvector
@@ -17,24 +18,24 @@ from core.engine import Cell
 
 # ================================ Target Bytes Cache ================================
 # IMPORTANT NOTE: Sequence[Cell] must really be tuple[Cell] for there to be any benefit to using the Cache!!! Because tuple is hashable.
-__max_cache_size__: int = 0
+__bytes_cache_size__: int = 0
 __bytes_cache__ = {  # FIFO cache
     # globally cached bytes will go here where the key is an immutable array of Cells and the value is the compiled bytes
 }
 def __retrieve_bytes__(key: Sequence[Cell]) -> bytes:
     """Used to retrieve the pre-compiled bytearrays from the global cache (fills up quickly for our application)."""
     pass
-def enable_global_cache(b: bool, max_cache_size: int = 1048):
+def enable_global_cache(b: bool, cache_size: int = 1024):
     """Enable the use of the global bytes cache. Consider disabling the cache if there is an unknown number of bytes sequences to be used."""
     if b:
-        global __max_cache_size__
-        __max_cache_size__ = max_cache_size
+        global __bytes_cache_size__
+        __bytes_cache_size__ = cache_size
         def retrieve_bytes(key: Sequence[Cell]) -> bytes:
             global __bytes_cache__
             try:  # we use this because the cache "hit" is most common for L-Systems... so a bit faster than doing an if statement when key exists in the cache already.
                 return __bytes_cache__[key]
             except KeyError:
-                if len(__bytes_cache__) >= __max_cache_size__:  # ensure that the cache stays within limits
+                if len(__bytes_cache__) >= __bytes_cache_size__:  # ensure that the cache stays within limits
                     try:
                         del __bytes_cache__[next(iter(__bytes_cache__))]  # use the fact that dicts keep element order to follow FIFO caching principles
                     except (StopIteration, RuntimeError, KeyError):
@@ -53,13 +54,17 @@ enable_global_cache(True)
 # ================================ Regex Backend ================================
 import re
 import regex
-from regex import finditer  # this the default (can be changed with the `set_regex_backend` function below)
+from regex import finditer as _finditer  # this the default (can be changed with the `set_regex_backend` function below)
 def set_regex_backend(m: Literal['re', 'regex']):
     """Set the regex backend to either the builtin `re` or the more versatile `regex` (default)"""
     if m == 'regex':
-        globals()['finditer'] = regex.finditer
+        globals()['_finditer'] = regex.finditer
     elif m == 're':
-        globals()['finditer'] = re.finditer
+        globals()['_finditer'] = re.finditer
+__pattern_cache__: dict[str | bytes, re.Pattern | regex.Pattern]
+def finditer():
+    pass
+
 
 
 # ================================ Vector Implementation ================================
@@ -117,8 +122,9 @@ class Vec(MutableSequence):
     def __getitem__(self, index):
         return self.vec[index]
 
-    def finditer(self, pattern: bytes, *args, **kwargs) -> Iterator[re.Match | type[regex.Match]]:
-        return finditer(pattern, self.search_buffer, *args, **kwargs)  # pattern is automatically compiled and cached by the regex engine... (but only ~500 patterns are cached)
+    def finditer(self, pattern: bytes, *args, **kwargs) -> Iterator[tuple[int, int]]:
+        for m in finditer(pattern, self.search_buffer, *args, **kwargs):
+            yield m.span()
 
     # ================ Modifiers ================
     @overload

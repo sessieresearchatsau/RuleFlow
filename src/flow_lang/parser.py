@@ -122,22 +122,33 @@ class FlowLangTransformer(Transformer):
         out = {
             "type": 'instruction',
             "selector": [],
-            "operator": items[-3],
-            "target": items[-2],
+            "operator": None,
+            "target": [],
             "flags": _ if (_:=items[-1]) else {}
         }
-        for i in range(len(items) - 3):
+        for i in range(len(items) - 1):  # -1 to prevent looping over the flags dict (or None if there are no flags)
             t: str = items[i]['type']
             if t == 'selector':
                 out['selector'].append(items[i])
+            elif t == 'operator':
+                out['operator'] = items[i]
+            elif t == 'target':
+                out['target'].append(items[i])
         if (op_type:=out['operator']['operator_type']) in ('OP_SHIFT_R', 'OP_SHIFT_L'):  # special case for these rules
-            out['target'] = str_to_num(out['target']['value']) * (-1 if op_type == 'OP_SHIFT_L' else 1)
+            for t in out['target']:
+                t: dict  # to make the IDE recognize it
+                t['value'] = str_to_num(t['value']) * (-1 if op_type == 'OP_SHIFT_L' else 1)
         return out
 
     def selector(self, items):
         # Unwrap selector child (regex_term, literal_term, etc.)
         items[0]['selector_type'] = items[0]['type']
         items[0]['type'] = 'selector'
+        return items[0]
+
+    def target(self, items):
+        items[0]['target_type'] = items[0]['type']
+        items[0]['type'] = 'target'
         return items[0]
 
     def operator(self, items):
@@ -228,20 +239,21 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
 if __name__ == "__main__":
     # example (different rules can be added to ensure correct parsing):
     from pprint import pprint
-    parser = FlowLangParser()
-    t = parser.parse("""
-    // Rule 30
-    @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
-    @import(eca_presets);
-    
-    // define the rules
-    @merge(0);
-    (-pl[inf] -mr[0,inf]) {
-        @decode(wns, AB, 30);
-    }
-    
-    // Run n times
-    @evolve(16);
-    """)
+    parser = FlowLangParser(True)
+    # t = parser.parse("""
+    # // Rule 30
+    # @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+    # @import(eca_presets);
+    #
+    # // define the rules
+    # @merge(0);
+    # (-pl[inf] -mr[0,inf]) {
+    #     @decode(wns, AB, 30);
+    # }
+    #
+    # // Run n times
+    # @evolve(16);
+    # """)
+    t = parser.parse("""AAB >> 4;""")
     print(type(t))
     pprint(t)

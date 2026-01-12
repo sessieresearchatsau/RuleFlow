@@ -3,8 +3,7 @@
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
-from typing import Sequence, NamedTuple, Literal, cast, Iterator, Any, Callable
-from re import Pattern
+from typing import Sequence, NamedTuple, Literal, cast, Iterator
 from copy import deepcopy, copy
 from numerical_helpers import INF
 from core.engine import (
@@ -20,7 +19,12 @@ from core.engine import (
 
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range"]
-    selector: Sequence[Cell] | Pattern | tuple[int, int]
+    selector: str | bytes | tuple[int, int]  # str | bytes is used for both literal and regex
+
+
+class Target(NamedTuple):
+    type: Literal['literal']
+    target: Sequence[Cell] | int | None  # Sequence[Cell] is for most operations, Int for operations such as shifting, and None for operations such as delete.
 
 
 class BaseRule(RuleABC):
@@ -50,11 +54,11 @@ class BaseRule(RuleABC):
         'life': 'lifespan',
     }
 
-    def __init__(self, selector: Sequence[Selector], target: Selector | int | None):
+    def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
         super().__init__()
-        # Functionality Fields
+        # Functionality Fields (you can have multiple selectors and multiple targets)
         self.selectors: Sequence[Selector] = selector  # used by self.match()
-        self.target: Selector | int | None = target  # used by self.apply()  # Selector is for most operations, Int for operations such as shifting, and None for operations such as delete.
+        self.target: Sequence[Target] = target  # used by self.apply()
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
@@ -177,7 +181,7 @@ class BaseRule(RuleABC):
             new_cells.extend(delta_cell.new_cells)
         return DeltaCell(destroyed_cells, new_cells)
 
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | None) -> DeltaCell:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | int | None) -> DeltaCell:
         raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, deepcopy(target))`)')
 
     # noinspection PyMethodFirstArgAssignment
@@ -199,20 +203,7 @@ class BaseRule(RuleABC):
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
                 # noinspection PyTypeHints
                 self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
-
-                # make sure the target is in a correct form for all rules (Sequence[Cell] for rewriting or inserting, None for deleting or reversing, and int for shifting)
-                target: Sequence[Cell] | int | None = None
-                if isinstance(self.target, int):
-                    target = self.target
-                elif isinstance(t:=self.target, Selector):
-                    if t.type == 'literal':
-                        target = t.selector
-                    elif t.type in ('regex', 'range'):
-                        span: tuple[int, int] | None = next(prev_space.regex_find(t.selector), None) \
-                        if t.type == 'regex' else t.selector if t.type == 'range' else None
-                        if span is None:
-                            break
-                        target = prev_space[span[0]:span[1]]
+                target: Sequence[Cell] | int | None = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:

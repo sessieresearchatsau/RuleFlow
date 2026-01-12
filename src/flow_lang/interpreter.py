@@ -1,12 +1,11 @@
 from typing import Any, Type, Iterator, Sequence, cast
-import re
 from llm_module import LLMSelector
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
 from parser import FlowLangParser
 from implementation import (
-    Selector, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,
+    Selector, Target, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,
     DeletionRule, ShiftingRule, ReverseRule
 )
 
@@ -27,15 +26,27 @@ def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector 
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
     if s_type == "literal":
-        return Selector(type=s_type, selector=tuple((Cell(c) for c in s_value)))  # IMPORTANT NOTE: we use tuple because it uses less memory and is hashable so that the cache system of PVec works.
+        return Selector(type=s_type, selector=s_value.replace('_', '.'))  # replace '_' with the regex wildcard '.' because we use regex for matching literals as well.
     elif s_type == "regex":
-        return Selector(type=s_type, selector=re.compile(s_value))
+        return Selector(type=s_type, selector=s_value)
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
     elif s_type == "llm_prompt" and llm_selector:
-        re_pattern: re.Pattern = re.compile(llm_selector.prompt(s_value))
-        return Selector(type='regex', selector=re_pattern)
+        return Selector(type='regex', selector=llm_selector.prompt(s_value))
     raise ValueError(f"Unknown selector type: {s_type}")
+
+
+def interpret_target(selector_data: dict[str, Any]) -> Target:
+    """Converts AST selector data into a clean Target NamedTuple."""
+    t_type = selector_data["target_type"]
+    t_value = selector_data["value"]
+    if t_type == "literal":
+        return Target(
+            type=t_type,
+            target=t_value if isinstance(t_value, int) else tuple(Cell(c) for c in t_value)
+        )
+    # add more conditionals if additional types are added to the terminal for target
+    raise ValueError(f"Unknown target type: {t_type}")
 
 
 def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], llm_selector: LLMSelector) -> Iterator[BaseRule]:
@@ -145,18 +156,19 @@ class FlowLang(Flow):
                 break
 
     def __compress_group(self, identifier: int | str):
-        # TODO: this should always run for ALL rules as this increases performance of evolution
         """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
         rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
                                  if rule.group == identifier and not rule.disabled]
         # If any rule makes no changes, disable it.
         for rule in rules:
+            if type(rule) != OverwriteRule:  # we only care about this type of rule... for obvious reasons
+                continue
             rule_is_active: bool = False
             for selector in rule.selectors:
-                for s_char, t_char in zip(selector.selector, rule.target.selector):
+                for s_char, t_char in zip(selector.selector, rule.target[0].target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different matches sets)
                     if t_char.quanta == '_':
                         continue
-                    if s_char.quanta != t_char.quanta:
+                    if s_char != t_char.quanta:
                         rule_is_active = True
             if not rule_is_active:
                 rule.disabled = True
