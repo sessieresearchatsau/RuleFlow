@@ -23,8 +23,8 @@ class Selector(NamedTuple):
 
 
 class Target(NamedTuple):
-    type: Literal['literal']
-    target: Sequence[Cell] | int | None  # Sequence[Cell] is for most operations, Int for operations such as shifting, and None for operations such as delete.
+    type: Literal["literal", "int"]
+    target: Sequence[Cell] | int  # Sequence[Cell] is for most operations, Int for operations such as shifting.
 
 
 class BaseRule(RuleABC):
@@ -201,9 +201,12 @@ class BaseRule(RuleABC):
             bl: int = 0  # branch executions
             matches_bound: int = len(rule_match.matches) - 1
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
-                # noinspection PyTypeHints
                 self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
-                target: Sequence[Cell] | int | None = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
+                if self.target:
+                    # noinspection PyUnresolvedReferences
+                    target: Sequence[Cell] | int = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
+                else:
+                    target: None = None
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:

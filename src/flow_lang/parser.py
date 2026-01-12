@@ -138,6 +138,7 @@ class FlowLangTransformer(Transformer):
             for t in out['target']:
                 t: dict  # to make the IDE recognize it
                 t['value'] = str_to_num(t['value']) * (-1 if op_type == 'OP_SHIFT_L' else 1)
+                t['target_type'] = 'int'
         return out
 
     def selector(self, items):

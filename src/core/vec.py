@@ -25,7 +25,7 @@ __bytes_cache__ = {  # FIFO cache
 def __retrieve_bytes__(key: Sequence[Cell]) -> bytes:
     """Used to retrieve the pre-compiled bytearrays from the global cache (fills up quickly for our application)."""
     pass
-def enable_global_cache(b: bool, cache_size: int = 1024):
+def enable_bytes_cache(b: bool, cache_size: int = 1024):
     """Enable the use of the global bytes cache. Consider disabling the cache if there is an unknown number of bytes sequences to be used."""
     if b:
         global __bytes_cache_size__
@@ -48,7 +48,7 @@ def enable_global_cache(b: bool, cache_size: int = 1024):
         def retrieve_bytes(key: Sequence[Cell]) -> bytes:
             return bytes(ord(c.quanta) for c in key)
     globals()['__retrieve_bytes__'] = retrieve_bytes
-enable_global_cache(True)
+enable_bytes_cache(True)
 
 
 # ================================ Regex Backend ================================
@@ -62,6 +62,8 @@ def set_regex_backend(m: Literal['re', 'regex']):
     elif m == 're':
         globals()['_finditer'] = re.finditer
 __pattern_cache__: dict[str | bytes, re.Pattern | regex.Pattern]
+def __retrieve_pattern__(p: str | bytes, *args, **kwargs) -> re.Pattern | regex.Pattern:
+    return __pattern_cache__[p]
 def finditer():
     pass
 

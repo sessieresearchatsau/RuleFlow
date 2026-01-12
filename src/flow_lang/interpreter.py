@@ -66,14 +66,7 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
             print(f'Warning: All rules must have a selector. Skipping rule.')
             continue
         selectors = [interpret_selector(sd, llm_selector) for sd in instruction['selector']]
-
-        # The target may be a selector dict, an int (for shifting), or None (for deleting)
-        target_data = instruction.get('target')
-        target = None
-        if isinstance(target_data, dict):
-            target = interpret_selector(target_data, llm_selector)
-        elif isinstance(target_data, int):
-            target = target_data
+        target = [interpret_target(td) for td in instruction['target']]
 
         # 2. Instantiate Rule
         rule_instance: BaseRule = RuleClass(selectors, target)
