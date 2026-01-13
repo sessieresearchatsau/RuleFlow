@@ -1,15 +1,9 @@
 // Rule 30
-@init(AAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAA);
+@mem(TrieVec);
+@import(ca);
+@init(500 * "A" + "B" + "A" * 500);
 
-// define the rules
-@compress(0);
-@merge(0);
-(-pl[inf] -mr[0,inf] -sr[0,2]) {
-    // BB_ --> _A_;
-    // BAA --> _B_;
-    // AAB --> _B_;
-    @decode(wns, AB, 126);
-}
+@decode(wns, AB, 82);
 
 // Run n times
-@evolve(20);
+// @evolve(20);

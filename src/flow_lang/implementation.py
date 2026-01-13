@@ -101,7 +101,7 @@ class BaseRule(RuleABC):
         self.on_conflict: Signal = Signal()
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {self.target.selector})"
+        return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {[t.target for t in self.target]})"
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
@@ -140,10 +140,10 @@ class BaseRule(RuleABC):
                     continue
                 for pattern in self.selectors:
                     finds: Iterator[tuple[int, int]]
-                    if pattern.type == 'literal':
-                        finds = space.find(pattern.selector)  # it is better if the selector is already a Sequence[Cell] because otherwise the raw string has to be converted every time.
-                    elif pattern.type == 'regex':
-                        finds = space.regex_find(pattern.selector)
+                    if pattern.type in ('literal', 'regex'):
+                        # finds = space.find(tuple(Cell(c) for c in pattern.selector))  # older slow way (before Vec containers)
+                        # noinspection PyUnresolvedReferences
+                        finds = space.cells.finditer(pattern.selector)  # FlowLang uses the Vec objects from the custom vec implementation for cells in the space states (look at the interpreter). These Vecs have builtin regex matching.
                     elif pattern.type == 'range':
                         finds = iter((pattern.selector,))
                     else: continue
@@ -186,6 +186,8 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
+        # TODO: make this work with the branching for multiway systems (must branch the Vec.search_buffer: bytearray as it is separate from the cells container)
+        # TODO: after that, work on the printer, and the causal network/graph code (explore the adjacency matrices for rule 30... maybe a pattern?)
         top_self: BaseRule = self  # because self is reassigned when there are self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces

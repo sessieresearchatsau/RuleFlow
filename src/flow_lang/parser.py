@@ -5,7 +5,10 @@ from typing import Any, cast
 
 
 BUILTIN_IMPORT_PATHS: dict[str, str] = {
-    'ca_presets': "@merge(0);\n-pl[inf]\n-mr[0,inf]"  # default import code to streamline the use of CAs in the 0th group.
+    'ca': "@regex_find_args(overlapped=True);\n"
+                  "@compress(0);\n"
+                  "@merge(0);\n"
+                  "-pl[inf] -mr[0,inf]"  # default import code to streamline the use of CAs in the 0th group.
 }
 
 
@@ -255,6 +258,6 @@ if __name__ == "__main__":
     # // Run n times
     # @evolve(16);
     # """)
-    t = parser.parse("""AAB >> 4;""")
+    t = parser.parse("""A_B --> _A_;""")
     print(type(t))
     pprint(t)

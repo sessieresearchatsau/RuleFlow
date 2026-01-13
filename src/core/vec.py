@@ -18,54 +18,92 @@ from core.engine import Cell
 
 # ================================ Target Bytes Cache ================================
 # IMPORTANT NOTE: Sequence[Cell] must really be tuple[Cell] for there to be any benefit to using the Cache!!! Because tuple is hashable.
-__bytes_cache_size__: int = 0
-__bytes_cache__ = {  # FIFO cache
+_bytes_cache_size: int = 1024
+_bytes_cache = {  # FIFO cache
     # globally cached bytes will go here where the key is an immutable array of Cells and the value is the compiled bytes
 }
-def __retrieve_bytes__(key: Sequence[Cell]) -> bytes:
+def _retrieve_bytes(key: Sequence[Cell]) -> bytes:
     """Used to retrieve the pre-compiled bytearrays from the global cache (fills up quickly for our application)."""
     pass
-def enable_bytes_cache(b: bool, cache_size: int = 1024):
+def enable_bytes_cache(b: bool, cache_size: int = _bytes_cache_size):
     """Enable the use of the global bytes cache. Consider disabling the cache if there is an unknown number of bytes sequences to be used."""
     if b:
-        global __bytes_cache_size__
-        __bytes_cache_size__ = cache_size
+        global _bytes_cache_size
+        _bytes_cache_size = cache_size
         def retrieve_bytes(key: Sequence[Cell]) -> bytes:
-            global __bytes_cache__
-            try:  # we use this because the cache "hit" is most common for L-Systems... so a bit faster than doing an if statement when key exists in the cache already.
-                return __bytes_cache__[key]
+            global _bytes_cache
+            try:  # we use this because the cache "hit" is most common for our systems... so a bit faster than doing an if statement when key exists in the cache already.
+                return _bytes_cache[key]
             except KeyError:
-                if len(__bytes_cache__) >= __bytes_cache_size__:  # ensure that the cache stays within limits
+                if len(_bytes_cache) >= _bytes_cache_size:  # ensure that the cache stays within limits
                     try:
-                        del __bytes_cache__[next(iter(__bytes_cache__))]  # use the fact that dicts keep element order to follow FIFO caching principles
+                        del _bytes_cache[next(iter(_bytes_cache))]  # use the fact that dicts keep element order to follow FIFO caching principles
                     except (StopIteration, RuntimeError, KeyError):
                         pass
-                __bytes_cache__[key] = (r := bytes(ord(c.quanta) for c in key))
+                _bytes_cache[key] = (r := bytes(ord(c.quanta) for c in key))
                 return r
             except TypeError:  # if key is not hashable:  # but it really-really ought to be!
                 return retrieve_bytes(tuple(key))
     else:
         def retrieve_bytes(key: Sequence[Cell]) -> bytes:
             return bytes(ord(c.quanta) for c in key)
-    globals()['__retrieve_bytes__'] = retrieve_bytes
+    globals()['_retrieve_bytes'] = retrieve_bytes
 enable_bytes_cache(True)
 
 
 # ================================ Regex Backend ================================
 import re
 import regex
-from regex import finditer as _finditer  # this the default (can be changed with the `set_regex_backend` function below)
+from regex import compile  # the default regex compiler
 def set_regex_backend(m: Literal['re', 'regex']):
     """Set the regex backend to either the builtin `re` or the more versatile `regex` (default)"""
     if m == 'regex':
-        globals()['_finditer'] = regex.finditer
+        globals()['compile'] = regex.compile
     elif m == 're':
-        globals()['_finditer'] = re.finditer
-__pattern_cache__: dict[str | bytes, re.Pattern | regex.Pattern]
-def __retrieve_pattern__(p: str | bytes, *args, **kwargs) -> re.Pattern | regex.Pattern:
-    return __pattern_cache__[p]
-def finditer():
-    pass
+        globals()['compile'] = re.compile
+def set_regex_compiler_args(*args, **kwargs):
+    """Sets the default args for the regex compiler that compiles patterns."""
+    global _regex_compiler_args
+    _regex_compiler_args = args, kwargs
+def set_regex_find_args(*args, **kwargs):
+    """Sets the default arguments for the Pattern.find_<type>() function."""
+    global _regex_find_args
+    _regex_find_args = args, kwargs
+_regex_compiler_args: tuple[tuple, dict] = ((), {})
+_regex_find_args: tuple[tuple, dict] = ((), {})
+_pattern_encoding: str = 'ascii'
+_pattern_cache_size: int = 1024
+_pattern_cache: dict[str | bytes, re.Pattern | regex.Pattern] = {}
+def _retrieve_pattern(p: str | bytes) -> re.Pattern | regex.Pattern:
+    """Used to retrieve the pre-compiled patterns."""
+    pass  # p must really be bytes for the compiled pattern to work on the bytearray search buffer... the cache takes care of this.
+def enable_pattern_cache(b: bool, cache_size: int = _pattern_cache_size):
+    """Enable the use of the global pattern cache. Consider disabling the cache if there is an unknown number of patterns to be used."""
+    if b:
+        global _pattern_cache_size
+        _pattern_cache_size = cache_size
+        def retrieve_pattern(p: str | bytes) -> re.Pattern | regex.Pattern:
+            global _pattern_cache
+            try:  # we use this because the cache "hit" is most common for our systems... so a bit faster than doing an if statement when key exists in the cache already.
+                return _pattern_cache[p]
+            except KeyError:
+                if len(_pattern_cache) >= _pattern_cache_size:  # ensure that the cache stays within limits
+                    try:
+                        del _pattern_cache[next(iter(_pattern_cache))]  # use the fact that dicts keep element order to follow FIFO caching principles
+                    except (StopIteration, RuntimeError, KeyError):
+                        pass
+                _pattern_cache[p] = (r:=compile(p if isinstance(p, bytes) else bytes(p, _pattern_encoding),
+                                              *_regex_compiler_args[0], **_regex_compiler_args[1]))
+                return r
+    else:
+        def retrieve_pattern(p: str | bytes) -> re.Pattern | regex.Pattern:
+            if isinstance(p, str):
+                p = bytes(p, _pattern_encoding)
+            return compile(p, *_regex_compiler_args[0], **_regex_compiler_args[1])
+    globals()['_retrieve_pattern'] = retrieve_pattern
+enable_pattern_cache(True)
+def finditer(pattern: str | bytes, search_buffer: bytearray) -> Iterator[re.Match | regex.Match]:
+    return _retrieve_pattern(pattern).finditer(search_buffer, *_regex_find_args[0], **_regex_find_args[1])
 
 
 
@@ -92,7 +130,7 @@ class Vec(MutableSequence):
 
     # ================ Branching Methods ================
     def branch_search_buffer(self, reconstruct_from_cells: bool = False) -> None:
-        """Create new search buffer (useful for multi-ways). If using from_pvec, it will be reconstructed directly from the cells, otherwise just copied."""
+        """Create new search buffer (useful for multi-ways). If using reconstruct_from_cells, it will be reconstructed directly from the cells, otherwise just copied."""
         if reconstruct_from_cells:
             self.search_buffer = bytearray((ord(c.quanta) for c in self.vec))  # O(n log_32 n)
         else:
@@ -124,9 +162,10 @@ class Vec(MutableSequence):
     def __getitem__(self, index):
         return self.vec[index]
 
-    def finditer(self, pattern: bytes, *args, **kwargs) -> Iterator[tuple[int, int]]:
-        for m in finditer(pattern, self.search_buffer, *args, **kwargs):
-            yield m.span()
+    def finditer(self, pattern: str | bytes, group: int = 0) -> Iterator[tuple[int, int]]:
+        # group tell span to return for a specific (sub)group within the regex match. 0 is the default and returns the span for the entire match.
+        for m in finditer(pattern, self.search_buffer):
+            yield m.span(group)
 
     # ================ Modifiers ================
     @overload
@@ -139,7 +178,7 @@ class Vec(MutableSequence):
 
     def __setitem__(self, index, value):
         self.vec[index] = value
-        self.search_buffer[index] = ord(value.quanta) if isinstance(value, Cell) else __retrieve_bytes__(value)
+        self.search_buffer[index] = ord(value.quanta) if isinstance(value, Cell) else _retrieve_bytes(value)
 
     def __delitem__(self, index: int | slice):
         del self.vec[index]
@@ -153,7 +192,7 @@ class Vec(MutableSequence):
     def extend(self, values: Sequence[Cell]):
         """Extend with values"""
         self.vec.extend(values)
-        self.search_buffer.extend(__retrieve_bytes__(values))
+        self.search_buffer.extend(_retrieve_bytes(values))
 
     def insert(self, index: int, value: Cell):
         """Insert value at index"""
@@ -212,7 +251,7 @@ class TrieVec(Vec):
             else: # Structural Change: because the evolver cannot handle length changes (deletions or insertions)
                 self.commit()  # flush any existing point-updates to the pvec
                 self.vec = self.vec[:start] + pvector(value) + self.vec[stop:]  # does not use the Evolver object as this creates a new node.
-            self.search_buffer[start:stop] = __retrieve_bytes__(value)
+            self.search_buffer[start:stop] = _retrieve_bytes(value)
             return
         # if isinstance(index, int):
         value: Cell
@@ -236,7 +275,7 @@ class TrieVec(Vec):
         """Extend with values"""
         self.edit()
         self.evolver.extend(values)
-        self.search_buffer.extend(__retrieve_bytes__(values))
+        self.search_buffer.extend(_retrieve_bytes(values))
 
     def insert(self, index, value):
         """Insert value at index"""

@@ -1,8 +1,13 @@
+"""
+==== FUTURE CONSIDERATIONS ====
+- For the 'init' directive, maybe use a save eval such as evalidate rather than the current eval().
+"""
 from typing import Any, Type, Iterator, Sequence, cast
 from llm_module import LLMSelector
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
+from core import vec
 from parser import FlowLangParser
 from implementation import (
     Selector, Target, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,
@@ -43,7 +48,7 @@ def interpret_target(selector_data: dict[str, Any]) -> Target:
     if t_type == "literal":
         return Target(
             type=t_type,
-            target=t_value if isinstance(t_value, int) else tuple(Cell(c) for c in t_value)
+            target=t_value if isinstance(t_value, int) else tuple(Cell(c) for c in t_value)  # this really needs to be a tuple so that vec.Vec is able to cache it properly (tuple is hashable)
         )
     # add more conditionals if additional types are added to the terminal for target
     raise ValueError(f"Unknown target type: {t_type}")
@@ -61,17 +66,17 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
             print(f"Warning: Unknown operator '{operator}'. Skipping rule.")
             continue
 
-        # 1. Prepare Selectors and Targets
+        # Prepare Selectors and Targets
         if not instruction['selector']:
             print(f'Warning: All rules must have a selector. Skipping rule.')
             continue
         selectors = [interpret_selector(sd, llm_selector) for sd in instruction['selector']]
         target = [interpret_target(td) for td in instruction['target']]
 
-        # 2. Instantiate Rule
+        # Instantiate Rule
         rule_instance: BaseRule = RuleClass(selectors, target)
 
-        # 3. Merge and Assign Flags (Global < Rule/Group)
+        # Merge and Assign Flags (Global < Rule/Group)
         # Start with global defaults
         final_flags = global_flags.copy()
         rule_flags = instruction.get('flags', {})
@@ -103,30 +108,63 @@ def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, An
             # noinspection PyUnboundLocalVariable
             print(f"Error: Could not traverse '{part}' in path '{path}'.")
             continue
-        returns[path] = current_obj(*args)
+
+        # process arguments, call the function, store result
+        _args: list = []
+        _kwargs: dict = {}
+        for arg in args:
+            if isinstance(arg, str) and '=' in arg:
+                k, v = arg.split('=')
+                _kwargs[k] = eval(v)  # yes, I know this is not safe... buts it's very useful.
+            else:
+                _args.append(arg)
+        returns[path] = current_obj(*_args, **_kwargs)
     return returns
 
 
 class FlowLang(Flow):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def __init__(self, lang: str, init_space: Sequence[
-                                                  str] | str | None = None):  # init_space can be none if the @init directive is defined.
+    def __init__(self, lang: str, init_space: Sequence[str] | str | None = None):  # init_space can be none if the @init directive is defined.
         self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         if isinstance(init_space, str):
             init_space = (init_space,)
+        r: dict[str, Any] = interpret_directives(
+            {
+                'init': lambda *args: map(eval, map(str, args)),  # used to set the initial universe conditions.
+                # We map str to the args because the parser.py auto-converts number characters (and others) to their actual types... str() converts these back.
+                # I know, I know... eval is unsafe. But in this context, I think it's fine because FlowLang is a language built on top of python. Just be careful if using FlowLang on a deployed server for users to use.
+                'mem': lambda mode: mode,  # used to set the cells container for the SpaceState.
+
+                # setters
+                'target_cache': vec.enable_bytes_cache,
+                'pattern_cache': vec.enable_pattern_cache,
+                'regex_backend': vec.set_regex_backend,
+                'regex_compiler_args': vec.set_regex_compiler_args,
+                'regex_find_args': vec.set_regex_find_args
+            },
+            self.ast['directives']
+        )
         if init_space is None:
-            r: dict[str, Any] = interpret_directives({'init': lambda *args: tuple(map(str, args))},
-                                                     self.ast['directives'])
             try:
                 init_space = r['init']
             except KeyError:
-                raise ValueError(
-                    "An `@init(<space>)` directive must be present if the `init_space` argument is not provided.")
+                raise ValueError("An `@init(<space>)` directive must be present if the `init_space` argument is not provided.")
+        Vec = getattr(vec, r.get('mem', 'Vec'))  # this is the vector we use (vec.Vec is the default)
         self.llm_selector: LLMSelector = LLMSelector()
-        super().__init__(RuleSet(list(interpret_instructions(self.ast['instructions'], self.ast['global_flags'],
-                                                             llm_selector=self.llm_selector))),
-                         [SpaceState([Cell(s) for s in string]) for string in init_space])
+        super().__init__(RuleSet(
+            list(
+                interpret_instructions(
+                    self.ast['instructions'],
+                    self.ast['global_flags'],
+                    llm_selector=self.llm_selector
+                )
+            )
+        ),
+            [SpaceState(Vec([Cell(s) for s in string])) for string in init_space]
+        )
+
+        # after instantiation
         interpret_directives({
             'print': self.print,
             'evolve': self.evolve_n,
@@ -157,12 +195,13 @@ class FlowLang(Flow):
             if type(rule) != OverwriteRule:  # we only care about this type of rule... for obvious reasons
                 continue
             rule_is_active: bool = False
-            for selector in rule.selectors:
-                for s_char, t_char in zip(selector.selector, rule.target[0].target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different matches sets)
-                    if t_char.quanta == '_':
-                        continue
-                    if s_char != t_char.quanta:
-                        rule_is_active = True
+            for target in rule.target:
+                for selector in rule.selectors:
+                    for s_char, t_char in zip(selector.selector, target.target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different match sets)
+                        if t_char.quanta == '_':
+                            continue
+                        if s_char != t_char.quanta:
+                            rule_is_active = True
             if not rule_is_active:
                 rule.disabled = True
 
@@ -174,16 +213,45 @@ class FlowLang(Flow):
 
 
 if __name__ == "__main__":
-    # "All them Bs at the end of the sequence, but only if there are more than 2."
-    code = """
-    @init(AB);
-    @evolve(30);
+    import psutil
+    import os
+    import gc
+    import timeit
+    from pprint import pprint
+    def get_mem():
+        """Returns current resident set size in MB."""
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / 1024 / 1024
 
-    ABA -> AAB;
-    A -> ABA;
+    gc.collect()
+    mem_start = get_mem()
+
+    # Run Simulation
+    code = """
+    @mem(TrieVec);
+    @init("A");
+    
+    // ==== 2-D network ====
+    // ABA -> AAB;
+    // A -> ABA;
+    
+    // ==== 4-D network ====
+    BA -> AB;
+    BC -> ACB;
+    A -> ACB;
+    BA -> AB;
+    BC -> ACB;
+    A -> ACB;
     """
-    flow = FlowLang.from_file('sss.flow')
-    flow.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(flow)
-    g.render_in_browser()
+    flow = FlowLang(code)  # .from_file('eca.flow')
+    time = timeit.timeit(lambda: flow.evolve_n(100_000), number=1)
+
+    mem_end = get_mem()
+    print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
+    print(f"Total time spent: {time:.2f} seconds")
+
+    # flow.print()
+    # pprint([r for r in flow.rule_set.rules])  # print the rule objects
+    # from core.graph import CausalGraph
+    # g = CausalGraph(flow)
+    # g.render_in_browser()

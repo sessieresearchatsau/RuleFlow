@@ -166,7 +166,7 @@ class SpaceState1D(SpaceState):
     def find(self, subspace: Sequence[Cell]) -> Iterator[tuple[int, int]]:
         subspace_len: int = len(subspace)
         for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
-            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len) if subspace[j].quanta != '_'):
+            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len) if subspace[j].quanta != '.'):
                 yield i, i + subspace_len
 
     # ==== Custom Modifiers ====
@@ -469,6 +469,7 @@ class Flow:
     def evolve_n(self, n_steps: int) -> None:
         """Evolve the system n steps."""
         for _ in range(n_steps):
+            # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
             self.evolve()
 
     def evolve_until_inert(self, max_steps: int = 1000) -> None:
@@ -515,7 +516,7 @@ class Flow:
         else:
             for event in self.events:
                 lines.append('\t'.join(_str_gen(event)))
-        string: str = '\n'.join(lines).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m')  # TODO: make sure to generalize this by adding the parameter to control it... this is just for testing
+        string: str = '\n'.join(lines).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m').replace('C', '\x1b[1;43m C \x1b[0m')  # TODO: make sure to generalize this by adding the parameter to control it... this is just for testing
         if print_to_terminal:
             print(string)
         return string

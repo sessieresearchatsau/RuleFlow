@@ -102,14 +102,14 @@ class TestTrieVec(unittest.TestCase):
         # but standard finditer usually finds non-overlapping.
         matches = list(self.vec.finditer(b"ABA"))
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0].start(), 0)
+        self.assertEqual(matches[0][0], 0)
 
         # 2. Test after a point update (buffer sync check)
         # Change "ABABA" -> "ABXBA"
         self.vec[2] = Cell("X")
         matches = list(self.vec.finditer(b"BX"))
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0].start(), 1)
+        self.assertEqual(matches[0][0], 1)
 
         # 3. Test structural change
         # "ABXBA" -> "ABX_Y_BA" (Insert Y)
@@ -120,7 +120,7 @@ class TestTrieVec(unittest.TestCase):
 
         xyb_matches = list(self.vec.finditer(b"XYB"))
         self.assertEqual(len(xyb_matches), 1)
-        self.assertEqual(xyb_matches[0].start(), 2)
+        self.assertEqual(xyb_matches[0][0], 2)
 
 
 class TestListVec(unittest.TestCase):
@@ -215,13 +215,13 @@ class TestListVec(unittest.TestCase):
         # 1. Test basic pattern match for "ABA"
         matches = list(self.vec.finditer(b"ABA"))
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0].start(), 0)
+        self.assertEqual(matches[0][0], 0)
 
         # 2. Test after a point update (buffer sync check)
         self.vec[2] = Cell("X")
         matches = list(self.vec.finditer(b"BX"))
         self.assertEqual(len(matches), 1)
-        self.assertEqual(matches[0].start(), 1)
+        self.assertEqual(matches[0][0], 1)
 
         # 3. Test structural change
         self.vec[3:3] = [Cell("Y")]
@@ -230,7 +230,7 @@ class TestListVec(unittest.TestCase):
 
         xyb_matches = list(self.vec.finditer(b"XYB"))
         self.assertEqual(len(xyb_matches), 1)
-        self.assertEqual(xyb_matches[0].start(), 2)
+        self.assertEqual(xyb_matches[0][0], 2)
 
 
 if __name__ == '__main__':
