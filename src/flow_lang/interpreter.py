@@ -228,23 +228,25 @@ if __name__ == "__main__":
 
     # Run Simulation
     code = """
-    @mem(TrieVec);
+    @mem(Vec);  // TODO: why does this MAKE a difference for multi-ways? This is a bug!!!
     @init("A");
     
     // ==== 2-D network ====
-    // ABA -> AAB;
-    // A -> ABA;
+    // TODO: these seem to not be working properly for multi-ways.
+    -mr[0, inf] -sr[0, 2] -bl[inf]
+    ABA -> AAB;  // -mr[0, inf] -sr[0, 2] -bl[inf];
+    A -> ABA;
     
     // ==== 4-D network ====
-    BA -> AB;
-    BC -> ACB;
-    A -> ACB;
-    BA -> AB;
-    BC -> ACB;
-    A -> ACB;
+    // BA -> AB;
+    // BC -> ACB;
+    // A -> ACB;
+    // BA -> AB;
+    // BC -> ACB;
+    // A -> ACB;
     """
     flow = FlowLang(code)  # .from_file('eca.flow')
-    time = timeit.timeit(lambda: flow.evolve_n(30), number=1)
+    time = timeit.timeit(lambda: flow.evolve_n(10), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")

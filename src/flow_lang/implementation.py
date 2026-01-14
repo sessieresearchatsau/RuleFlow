@@ -186,8 +186,11 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
+        # TODO: make this work with multiways by branching the search_buffer BEFORE changes are made to it (only branch it for the second lineage)
         # TODO: after that, work on the printer, and the causal network/graph code (explore the adjacency matrices for rule 30... maybe a pattern?)
-        top_self: BaseRule = self  # because self is reassigned when there are self has a chain of followers.
+        # TODO: make a decoder using the Caviness algorithm
+        # TODO: make tools for exploring pathways for multiways and ensure that they work!
+        top_self: BaseRule = self  # because self is reassigned when self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
             # submitted updates
