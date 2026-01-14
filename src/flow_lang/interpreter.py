@@ -244,13 +244,13 @@ if __name__ == "__main__":
     A -> ACB;
     """
     flow = FlowLang(code)  # .from_file('eca.flow')
-    time = timeit.timeit(lambda: flow.evolve_n(100_000), number=1)
+    time = timeit.timeit(lambda: flow.evolve_n(30), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
     print(f"Total time spent: {time:.2f} seconds")
 
-    # flow.print()
+    flow.print()
     # pprint([r for r in flow.rule_set.rules])  # print the rule objects
     # from core.graph import CausalGraph
     # g = CausalGraph(flow)

@@ -186,7 +186,6 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
-        # TODO: make this work with the branching for multiway systems (must branch the Vec.search_buffer: bytearray as it is separate from the cells container)
         # TODO: after that, work on the printer, and the causal network/graph code (explore the adjacency matrices for rule 30... maybe a pattern?)
         top_self: BaseRule = self  # because self is reassigned when there are self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []

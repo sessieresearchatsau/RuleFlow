@@ -9,6 +9,8 @@ dependencies = [
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",
     "ollama>=0.6.1",
+    "psutil>=7.2.1",
     "pyrsistent>=0.20.0",
     "pyvis>=0.3.2",
+    "regex>=2025.11.3",
 ]

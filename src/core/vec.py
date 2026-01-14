@@ -11,7 +11,7 @@ This would likely be a significant time commitment to implement properly... so d
 """
 from pyrsistent import PVector, pvector
 from pyrsistent.typing import PVectorEvolver
-from typing import MutableSequence, Sequence, Literal, Iterator, Any, overload
+from typing import MutableSequence, Sequence, Literal, Iterator, overload
 from copy import copy
 from core.engine import Cell
 
@@ -109,11 +109,12 @@ def finditer(pattern: str | bytes, search_buffer: bytearray) -> Iterator[re.Matc
 
 # ================================ Vector Implementation ================================
 class Vec(MutableSequence):
-    __slots__ = ('vec', 'search_buffer')
+    __slots__ = ('vec', 'search_buffer', '_branch_zero')
 
     def __init__(self, elems: Sequence[Cell]):
         self.vec: MutableSequence[Cell] = elems if isinstance(elems, MutableSequence) else list(elems)
         self.search_buffer: bytearray = bytearray((ord(c.quanta) for c in elems))
+        self._branch_zero: bool = True  # used to make multiway systems work... the search buffer must be branched after the first branch.
 
     def __str__(self):
         return str(self.vec)
@@ -140,7 +141,9 @@ class Vec(MutableSequence):
         """Branch the current vector into a new vector"""
         nv: Vec = object.__new__(Vec)
         nv.vec = copy(self.vec)
-        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
+        nv.search_buffer = self.search_buffer if self._branch_zero else self.search_buffer.copy()  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
+        nv._branch_zero = True
+        self._branch_zero = False
         return nv
 
     def __copy__(self):
@@ -208,6 +211,7 @@ class TrieVec(Vec):
         self.vec: PVector[Cell] = pvector(elems)
         self.search_buffer: bytearray = bytearray((ord(c.quanta) for c in elems))
         self.evolver: PVectorEvolver[Cell] | None = None
+        self._branch_zero: bool = True
 
     def __str__(self):
         return 'Vec' + str(self.vec)[7:]
@@ -229,8 +233,10 @@ class TrieVec(Vec):
         nv: TrieVec = object.__new__(TrieVec)
         nv.vec = self.vec  # we don't need to copy as edit() will do that for us
         nv.evolver = None
-        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
-        # we could auto enter edit mode here... however, that is not necessary as this should work just fine.
+        nv.search_buffer = self.search_buffer if self._branch_zero else self.search_buffer.copy()  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
+        nv._branch_zero = True
+        self._branch_zero = False
+        # we could auto enter edit mode here... however, that is not necessary as this should work just fine because it is auto entered upon edits.
         return nv
 
     # ================ Modifiers ================
