@@ -141,7 +141,8 @@ class FlowLang(Flow):
                 'pattern_cache': vec.enable_pattern_cache,
                 'regex_backend': vec.set_regex_backend,
                 'regex_compiler_args': vec.set_regex_compiler_args,
-                'regex_find_args': vec.set_regex_find_args
+                'regex_find_args': vec.set_regex_find_args,
+                'search_buffer': vec.enable_search_buffer
             },
             self.ast['directives']
         )
@@ -150,7 +151,7 @@ class FlowLang(Flow):
                 init_space = r['init']
             except KeyError:
                 raise ValueError("An `@init(<space>)` directive must be present if the `init_space` argument is not provided.")
-        Vec = getattr(vec, r.get('mem', 'Vec'))  # this is the vector we use (vec.Vec is the default)
+        Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
         self.llm_selector: LLMSelector = LLMSelector()
         super().__init__(RuleSet(
             list(
@@ -228,25 +229,21 @@ if __name__ == "__main__":
 
     # Run Simulation
     code = """
-    @mem(Vec);  // TODO: why does this MAKE a difference for multi-ways? This is a bug!!!
-    @init("A");
+    @mem(TrieVec);
+    @init("AB");
     
     // ==== 2-D network ====
-    // TODO: these seem to not be working properly for multi-ways.
-    -mr[0, inf] -sr[0, 2] -bl[inf]
-    ABA -> AAB;  // -mr[0, inf] -sr[0, 2] -bl[inf];
+    @import(local_multiway.fp);
+    ABA -> AAB;
     A -> ABA;
     
     // ==== 4-D network ====
     // BA -> AB;
     // BC -> ACB;
     // A -> ACB;
-    // BA -> AB;
-    // BC -> ACB;
-    // A -> ACB;
     """
     flow = FlowLang(code)  # .from_file('eca.flow')
-    time = timeit.timeit(lambda: flow.evolve_n(10), number=1)
+    time = timeit.timeit(lambda: flow.evolve_n(20), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")

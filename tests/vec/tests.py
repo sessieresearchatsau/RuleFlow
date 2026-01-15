@@ -83,15 +83,6 @@ class TestTrieVec(unittest.TestCase):
         self.vec[1] = Cell("Q")
         self.assertEqual(new_vec[1].quanta, "B")  # Original branch preserved
 
-    def test_buffer_reconstruction(self):
-        """Test manual search buffer sync."""
-        # Force the buffer out of sync manually for testing
-        self.vec.search_buffer = bytearray(b"XXXXX")
-        self.vec.branch_search_buffer(reconstruct_from_cells=True)
-
-        # Should be back to "ABCDE"
-        self.assertEqual(self.vec.search_buffer, bytearray(b"ABCDE"))
-
     def test_finditer_pattern_matching(self):
         """Test regex pattern matching via finditer on the search buffer."""
         chars = "ABABA"
@@ -197,15 +188,6 @@ class TestListVec(unittest.TestCase):
         # Because Vec.branch() uses a shallow copy of the list, index 1 is now distinct.
         self.assertEqual(self.vec[1].quanta, "B")
         self.assertEqual(new_vec[1].quanta, "Q")
-
-    def test_buffer_reconstruction(self):
-        """Test manual search buffer sync."""
-        # Force the buffer out of sync manually for testing
-        self.vec.search_buffer = bytearray(b"XXXXX")
-        self.vec.branch_search_buffer(reconstruct_from_cells=True)
-
-        # Should be back to "ABCDE"
-        self.assertEqual(self.vec.search_buffer, bytearray(b"ABCDE"))
 
     def test_finditer_pattern_matching(self):
         """Test regex pattern matching via finditer on the search buffer."""

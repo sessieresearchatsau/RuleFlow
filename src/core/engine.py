@@ -103,6 +103,10 @@ class SpaceState(ABC):
         """Should return the bool state of the space (has any contents)."""
 
     @abstractmethod
+    def __hash__(self):
+        """Should make the SpaceState hashable so that it can be stored in a hash table."""
+
+    @abstractmethod
     def __copy__(self) -> SpaceState | Any:
         """Copies the SpaceState (self), but does not copy the cells (internal fields) themselves
         (it only retains references to them). It is a shallow copy.
@@ -151,6 +155,9 @@ class SpaceState1D(SpaceState):
 
     def __bool__(self) -> bool:
         return bool(self.cells)
+
+    def __hash__(self):
+        return hash(tuple(self.cells))
 
     def __copy__(self) -> SpaceState1D:
         new_space: SpaceState1D = object.__new__(self.__class__)  # create new object without using init

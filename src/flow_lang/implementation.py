@@ -1,5 +1,11 @@
 """The implementation for 1D space that supports the language features.
 
+Policy:
+- Any multiways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
+become corrupt when branching (one state spawning two states). We have considered coding buffer branching logic...
+however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer.
+In the future, we may consider making the search_buffer branch-able (really, it is already possible by manually using Vec.search_buffer.copy()).
+
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
@@ -186,10 +192,6 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
-        # TODO: make this work with multiways by branching the search_buffer BEFORE changes are made to it (only branch it for the second lineage)
-        # TODO: after that, work on the printer, and the causal network/graph code (explore the adjacency matrices for rule 30... maybe a pattern?)
-        # TODO: make a decoder using the Caviness algorithm
-        # TODO: make tools for exploring pathways for multiways and ensure that they work!
         top_self: BaseRule = self  # because self is reassigned when self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
@@ -252,7 +254,7 @@ class BaseRule(RuleABC):
 
                     # set the new current space (branch into another universe)
                     if bl != self.branch_limit:
-                        current_space = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)
+                        current_space = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         bl += 1
                         self.on_branch.emit(rule_match, idx)
                     else:

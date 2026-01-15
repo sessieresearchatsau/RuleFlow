@@ -16,6 +16,55 @@ from copy import copy
 from core.engine import Cell
 
 
+# Helper
+def neutralize(cls):
+    """
+    Class decorator that overwrites all dunder methods of the parent
+    to return 'self' (or 0/False where Python requires strict types).
+    """
+    def return_self(self, *args, **kwargs):
+        return self
+    def return_zero(self, *args, **kwargs):
+        return 0
+    def return_false(self, *args, **kwargs):
+        return False
+    safe_list: set[str] = {  # These methods are critical for the object to exist/instantiate. Don't touch them.
+        '__new__', '__init__', '__class__', '__getattribute__',
+        '__setattr__', '__repr__', '__str__', '__dict__', '__doc__'
+    }
+    for name in dir(bytearray):
+        if name in safe_list:
+            continue
+        if name.startswith("__") and name.endswith("__"):
+            # Handle specific type constraints enforced by Python C-API
+            if name in ('__bool__',):
+                setattr(cls, name, return_false)
+            elif name in ('__len__', '__hash__', '__index__', '__int__'):
+                setattr(cls, name, return_zero)
+            elif name in ('__float__',):
+                setattr(cls, name, lambda self: 0.0)
+            else:
+                setattr(cls, name, return_self)
+    return cls
+
+
+@neutralize
+class NullByteArray(bytearray):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    # We also override __getattribute__ to swallow named methods like .append() or .decode()
+    def __getattribute__(self, name):
+        # Allow access to internal structure if absolutely needed, otherwise return self
+        if name in ('__class__', '__dict__', '__repr__'):
+            return super().__getattribute__(name)
+        # Return a lambda that swallows arguments and returns self
+        return lambda *args, **kwargs: self
+
+    def __repr__(self):
+        return "<NullByteArray>"
+
+
 # ================================ Target Bytes Cache ================================
 # IMPORTANT NOTE: Sequence[Cell] must really be tuple[Cell] for there to be any benefit to using the Cache!!! Because tuple is hashable.
 _bytes_cache_size: int = 1024
@@ -49,6 +98,13 @@ def enable_bytes_cache(b: bool, cache_size: int = _bytes_cache_size):
             return bytes(ord(c.quanta) for c in key)
     globals()['_retrieve_bytes'] = retrieve_bytes
 enable_bytes_cache(True)
+_search_buffer_enabled: bool = True
+_bytearray: type[bytearray | NullByteArray] = NullByteArray  # default is the "Blackhole"
+def enable_search_buffer(b: bool):
+    global _search_buffer_enabled, _bytearray
+    if b != _search_buffer_enabled:
+        globals()['bytearray'], _bytearray = _bytearray, bytearray
+        _search_buffer_enabled = b
 
 
 # ================================ Regex Backend ================================
@@ -93,7 +149,7 @@ def enable_pattern_cache(b: bool, cache_size: int = _pattern_cache_size):
                     except (StopIteration, RuntimeError, KeyError):
                         pass
                 _pattern_cache[p] = (r:=compile(p if isinstance(p, bytes) else bytes(p, _pattern_encoding),
-                                              *_regex_compiler_args[0], **_regex_compiler_args[1]))
+                                                *_regex_compiler_args[0], **_regex_compiler_args[1]))
                 return r
     else:
         def retrieve_pattern(p: str | bytes) -> re.Pattern | regex.Pattern:
@@ -129,18 +185,11 @@ class Vec(MutableSequence):
         """Commit changes made while in edit mode (for immutable/persistent internal vectors)."""
 
     # ================ Branching Methods ================
-    def branch_search_buffer(self, reconstruct_from_cells: bool = False) -> None:
-        """Create new search buffer (useful for multi-ways). If using reconstruct_from_cells, it will be reconstructed directly from the cells, otherwise just copied."""
-        if reconstruct_from_cells:
-            self.search_buffer = bytearray((ord(c.quanta) for c in self.vec))  # O(n log_32 n)
-        else:
-            self.search_buffer = self.search_buffer.copy()  # O(n)
-
     def branch(self) -> Vec:
         """Branch the current vector into a new vector"""
         nv: Vec = object.__new__(Vec)
         nv.vec = copy(self.vec)
-        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
+        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch
         return nv
 
     def __copy__(self):
@@ -153,6 +202,10 @@ class Vec(MutableSequence):
     def __len__(self):
         return len(self.vec)
 
+    def __iter__(self):
+        self.commit()  # flush any changes
+        return iter(self.vec)
+
     @overload
     def __getitem__(self, index: int) -> Cell: ...
 
@@ -160,11 +213,17 @@ class Vec(MutableSequence):
     def __getitem__(self, index: slice) -> MutableSequence[Cell]: ...
 
     def __getitem__(self, index):
+        self.commit()  # flush any changes before getting anything...
         return self.vec[index]
 
     def finditer(self, pattern: str | bytes, group: int = 0) -> Iterator[tuple[int, int]]:
-        # group tell span to return for a specific (sub)group within the regex match. 0 is the default and returns the span for the entire match.
-        for m in finditer(pattern, self.search_buffer):
+        # group tells span to return for a specific (sub)group within the regex match. 0 is the default and returns the span for the entire match.
+        if not _search_buffer_enabled:
+            self.commit()  # flush any changes
+            buffer = _bytearray((ord(c.quanta) for c in self.vec))  # is bytearray when search buffer is disabled.
+        else:
+            buffer = self.search_buffer
+        for m in finditer(pattern, buffer):
             yield m.span(group)
 
     # ================ Modifiers ================
@@ -251,7 +310,7 @@ class TrieVec(Vec):
             else: # Structural Change: because the evolver cannot handle length changes (deletions or insertions)
                 self.commit()  # flush any existing point-updates to the pvec
                 self.vec = self.vec[:start] + pvector(value) + self.vec[stop:]  # does not use the Evolver object as this creates a new node.
-            self.search_buffer[start:stop] = _retrieve_bytes(value)
+            self.search_buffer[index] = _retrieve_bytes(value)
             return
         # if isinstance(index, int):
         value: Cell

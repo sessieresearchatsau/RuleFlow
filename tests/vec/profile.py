@@ -75,17 +75,6 @@ def profile_vec_efficiency(v: type[Vec | TrieVec]):
     print(f"Regex Find (100 runs): {t_find:.4f}s")
 
 
-
-    # 4. Buffer Sync Overhead
-    print(f"\n[4] Search Buffer Sync Overhead")
-
-    def sync_buffer():
-        base_vec.branch_search_buffer(reconstruct_from_cells=True)
-
-    t_sync = timeit.timeit(sync_buffer, number=10)
-    print(f"Full Buffer Reconstruction ({N} cells, 10 runs): {t_sync:.4f}s")
-
-
 if __name__ == "__main__":
     # profile_vec_efficiency(Vec)
     profile_vec_efficiency(Vec)

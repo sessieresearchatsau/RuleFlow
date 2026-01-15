@@ -5,10 +5,20 @@ from typing import Any, cast
 
 
 BUILTIN_IMPORT_PATHS: dict[str, str] = {
-    'ca': "@regex_find_args(overlapped=True);\n"
-                  "@compress(0);\n"
-                  "@merge(0);\n"
-                  "-pl[inf] -mr[0,inf]"  # default import code to streamline the use of CAs in the 0th group.
+    'ca.fp': "@regex_find_args(overlapped=True);\n"
+             "@compress(0);\n"
+             "@merge(0);\n"
+             "-pl[inf] -mr[0,inf]",  # default import code to streamline the use of CAs in the 0th group.
+    'global_multiway.fp': "@search_buffer(false);\n"  # because the search buffer becomes "corrupt" after edits.
+                          "-gb[false] "  # all rules must be applied (no breaking)
+                          "-sr[0, inf] "
+                          "-mr[0, inf] "
+                          "-bl[inf]",
+    'local_multiway.fp': "@search_buffer(false);\n"
+                         "-gb[true] "  # only the first rule (in ordered precedence) that matches is branched out
+                         "-sr[0, inf] "
+                         "-mr[0, inf] "
+                         "-bl[inf]",
 }
 
 
@@ -61,9 +71,9 @@ class FlowLangTransformer(Transformer):
         p: str = part.strip()
         if p == '':
             return None
-        elif p == 'true':
+        elif p.lower() == 'true':
             return True
-        elif p == 'false':
+        elif p.lower() == 'false':
             return False
         try:
             return str_to_num(p)
