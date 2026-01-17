@@ -14,7 +14,7 @@ BUILTIN_IMPORT_PATHS: dict[str, str] = {
                           "-sr[0, inf] "
                           "-mr[0, inf] "
                           "-bl[inf]",
-    'local_multiway.fp': "@search_buffer(false);\n"
+    'ordered_multiway.fp': "@search_buffer(false);\n"
                          "-gb[true] "  # only the first rule (in ordered precedence) that matches is branched out
                          "-sr[0, inf] "
                          "-mr[0, inf] "

@@ -233,7 +233,7 @@ if __name__ == "__main__":
     @init("AB");
     
     // ==== 2-D network ====
-    @import(local_multiway.fp);
+    @import(ordered_multiway.fp);
     ABA -> AAB;
     A -> ABA;
     
