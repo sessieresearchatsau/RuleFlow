@@ -1,0 +1,288 @@
+/* =========================================
+   GLOBAL RESET & THEME
+   ========================================= */
+* {
+    box-sizing: border-box;
+}
+
+Screen {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    layers: base overlay;
+    transition: screen-blur 300ms;
+}
+
+
+/* =========================================
+   Input Modal
+   ========================================= */
+
+/* 1. The Screen Layer (The Dimmer) */
+InputModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+/* 2. The Dialog Box */
+#modal-dialog {
+    width: 60;
+    height: auto;
+    background: #252526;
+    border: thick #007acc;
+    padding: 1 2;
+}
+
+/* 3. Modal Components */
+#modal-label {
+    width: 100%;
+    content-align: center middle;
+    text-style: bold;
+    color: #ffffff;
+    margin-bottom: 1;
+}
+
+#modal-input {
+    width: 100%;
+    height: 3;
+    margin-bottom: 1;
+    background: #1e1e1e;
+    border: tall #444444;
+}
+
+#modal-input:focus {
+    border: tall #007acc;
+    background: #1e1e1e;
+}
+
+#modal-buttons {
+    width: 100%;
+    height: 3;
+    align: right middle;
+}
+
+#modal-buttons Button {
+    margin-left: 2;
+}
+
+
+/* =========================================
+   WELCOME SCREEN (Centered Modal)
+   ========================================= */
+WelcomeScreen {
+    align: center middle;
+    background: #1e1e1e;
+    overflow: auto auto;
+}
+
+#welcome-container {
+    width: 50%;
+    min-width: 95;
+    height: auto;
+    min-height: 25;
+    border: tab #454545;
+    background: #252526;
+    padding: 2 4;
+}
+
+#welcome-title {
+    text-style: bold;
+    color: #22a5ae;
+    margin-bottom: 2;
+    margin-top: 2;
+}
+
+#recents-list {
+    height: 10;
+    border: round #454545;
+    background: #1e1e1e;
+    background-tint: #1e1e1e;  /* So that it does not tint when focused... */
+    margin-bottom: 2;
+}
+
+#welcome-buttons {
+    align-horizontal: center;
+    height: 3;
+    margin-bottom: 1;
+}
+
+#welcome-buttons Button {
+    margin: 0 2;
+    min-width: 16;
+}
+
+
+
+
+/* =========================================
+   EDITOR SCREEN (3-Column Layout)
+   ========================================= */
+
+#main-layout {
+    width: 100%;
+    height: 100%;
+    layout: horizontal;
+    background: #1e1e1e;
+}
+
+/* --- 1. LEFT SIDEBAR --- */
+#sidebar {
+    width: 20%;
+    height: 100%;
+    border-right: solid #2b2b2b;
+    background: #181818;
+    min-width: 25;
+}
+
+/* --- 2. MIDDLE WORKSPACE --- */
+#workspace {
+    width: 1fr;
+    height: 100%;
+    border-right: solid #2b2b2b;
+    layout: vertical;
+}
+
+/* --- 3. RIGHT MENU --- */
+#right-menu {
+    width: 25%;
+    height: 100%;
+    background: #181818;
+    scrollbar-size: 1 1;
+    min-width: 30;
+}
+
+
+
+
+/* =========================================
+   COMPONENT STYLES
+   ========================================= */
+
+/* Headers */
+.pane-header {
+    width: 100%;
+    height: 1;
+    background: #252526;
+    color: #cccccc;
+    text-style: bold;
+    padding-left: 1;
+}
+
+/* Sidebar Specifics */
+.sidebar-note {
+    height: auto;
+    border-top: solid #2b2b2b;
+    padding: 1;
+    background: #181818;
+    dock: bottom;
+}
+
+.dim-text {
+    color: #666666;
+}
+
+/* Workspace Toolbar */
+#workspace-toolbar {
+    height: 3;
+    background: #252526;
+    padding: 0 1;
+    align: left middle;
+}
+
+#toolbar-actions {
+    width: 1fr;
+    align: right middle;
+    height: 100%;
+}
+
+.separator {
+    padding: 0 1;
+    color: #555555;
+}
+
+#btn-docs {
+    background: #333333;
+    border: none;
+    min-width: 8;
+}
+
+.action-btn {
+    min-width: 8;
+    border: none;
+    margin-left: 1;
+}
+.success { color: #87d787; }
+.warning { color: #d7af87; }
+.error   { color: #d78787; }
+
+/* Workspace Editor & Output */
+/* UPDATED: Uses 1fr so it fills space when bottom panel toggles */
+#editor-area {
+    height: 1fr;
+    background: #1e1e1e;
+    border-bottom: solid #2b2b2b;
+}
+
+#code-editor {
+    border: none;
+    height: 100%;
+}
+
+/* UPDATED: Fixed height helps the toggle logic work better */
+#bottom-panel {
+    height: 40%;
+    background: #1e1e1e;
+}
+
+TabbedContent {
+    height: 100%;
+}
+
+ContentSwitcher {
+    background: #1e1e1e;
+}
+
+RichLog {
+    background: #1e1e1e;
+    border: none;
+    padding: 1;
+}
+
+/* Right Menu Components */
+Collapsible {
+    background: #181818;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+
+CollapsibleTitle {
+    background: #252526;
+    color: #cccccc;
+}
+
+Input {
+    background: #2b2b2b;
+    border: none;
+    height: 1;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+
+Checkbox {
+    padding: 0;
+    background: #181818;
+    border: none;
+}
+
+.full-width-btn {
+    width: 100%;
+    margin-top: 1;
+    background: #333333;
+    border: none;
+}
+
+.placeholder-text {
+    width: 100%;
+    text-align: center;
+    padding-top: 2;
+    color: #666666;
+}
