@@ -18,7 +18,7 @@ class ReplacementRule(RuleABC):
         selector, op, target = rule_str.split(' ')
         self.selector_cells = tuple(Cell(c) for c in selector.strip())
         self.target_cells = tuple(Cell(c) for c in target.strip())
-        self.group_break = False  # set flags to modify the RuleSet behavior
+        self.group_break = True  # set flags to modify the RuleSet behavior
 
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
         output = ()
@@ -41,8 +41,8 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(10)
+    sss.evolve_n(15)
     sss.print()
-    # from core.graph import CausalGraph
-    # g = CausalGraph(sss)
-    # g.render_in_browser()
+    from core.graph import CausalGraph
+    g = CausalGraph(sss)
+    g.save_to_gephi_file('./graph.gexf')
