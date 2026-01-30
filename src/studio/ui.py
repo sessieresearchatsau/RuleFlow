@@ -1,12 +1,20 @@
 from textual.app import App, ComposeResult
 from textual.containers import Container, Center, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen, ModalScreen
-from textual.widgets import (
+from textual.widgets import ( Log,
     DirectoryTree, TextArea, RichLog, Button, Label,
     Switch, Select, TabbedContent, TabPane, OptionList,
     Input, Collapsible, Checkbox, Header, Footer, ContentSwitcher, Static
 )
 from textual import on
+
+
+LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
+| ___ \    | |    |  ___| |                  /  ___| |           | (_)      
+| |_/ /   _| | ___| |_  | | _____      __    \ `--.| |_ _   _  __| |_  ___  
+|    / | | | |/ _ \  _| | |/ _ \ \ /\ / /     `--. \ __| | | |/ _` | |/ _ \ 
+| |\ \ |_| | |  __/ |   | | (_) \ V  V /     /\__/ / |_| |_| | (_| | | (_) |
+\_| \_\__,_|_|\___\_|   |_|\___/ \_/\_/      \____/ \__|\__,_|\__,_|_|\___/"""
 
 
 class InputModal(ModalScreen[str]):
@@ -55,12 +63,7 @@ class WelcomeScreen(Screen):
             wc.border_subtitle = 'v0.1.0'
 
             with Center():  # to center it *relative* to the other widgets
-                yield Label(r"""______      _     ______ _                    _____ _             _ _       
-| ___ \    | |    |  ___| |                  /  ___| |           | (_)      
-| |_/ /   _| | ___| |_  | | _____      __    \ `--.| |_ _   _  __| |_  ___  
-|    / | | | |/ _ \  _| | |/ _ \ \ /\ / /     `--. \ __| | | |/ _` | |/ _ \ 
-| |\ \ |_| | |  __/ |   | | (_) \ V  V /     /\__/ / |_| |_| | (_| | | (_) |
-\_| \_\__,_|_|\___\_|   |_|\___/ \_/\_/      \____/ \__|\__,_|\__,_|_|\___/""", id="welcome-title")
+                yield Label(LOGO, id="welcome-title")
 
             yield (_:=OptionList(
                     *(f'Project Example {i}' for i in range(12)),
@@ -157,7 +160,7 @@ class EditorScreen(Screen):
                     with TabbedContent(initial="tab-output", id="bottom-tabs"):
                         # ID is applied to the TabPane content
                         with TabPane("Output", id="tab-output"):
-                            yield RichLog(id="log-output", highlight=True, markup=True)
+                            yield Log(id="log-output")
 
                         with TabPane("Analysis", id="tab-analysis"):
                             yield Label("Graph/Network Visualization Placeholder", classes="placeholder-text")
@@ -255,10 +258,15 @@ class EditorScreen(Screen):
 
     @on(Button.Pressed, "#btn-run")
     def action_run(self):
-        log = self.query_one("#log-output", RichLog)
-        log.write("[bold green]Running simulation...[/]")
-        log.write("Initializing ruleset...")
-        log.write("Execution started.")
+        log = self.query_one("#log-output", Log)
+        from rich.text import Text
+        s = "HELLO"
+        t = Text()
+        colors = ["red", "green", "yellow", "blue", "magenta"]
+        for ch, color in zip(s, colors):
+            t.append(ch, style=f"black on {color}")
+        import textual
+        textual.widgets.RichLog
 
     @on(Button.Pressed, "#btn-clear")
     def action_clear(self):

@@ -1,10 +1,13 @@
 // Rule 30
 @mem(TrieVec);
-@init("AB");
+@import(ca.fp);
+@init(20 * "A" + "B" + "A" * 20);
 
-BA -> AB;
-BC -> ACB;
-A -> ACB;
+// BA -> AB;
+// BC -> ACB;
+// A -> ACB;
+
+@decode(wns, AB, 30);
 
 // Run n times
 // @evolve(20);
