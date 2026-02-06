@@ -20,6 +20,7 @@ class SessionManager:
         # ====== Parent Reference (so that plugin classes can access all aspects of parents) ======
         self.app: App = parent_app
 
+    # ==== Session ====
     @property
     def current_session(self) -> FlowL:
         return self.sessions[self.selected_session]
@@ -31,6 +32,7 @@ class SessionManager:
         self.sessions[name] = self.current_flow_class()
         self.set_selected_session(name)
 
+    # ==== Flow Class ====
     @property
     def current_flow_class(self) -> type[FlowL]:
         return self.flow_classes[self.selected_flow_class]
@@ -41,7 +43,7 @@ class SessionManager:
     def register_flow_class(self, flow_class: type[FlowL]) -> None:
         self.flow_classes[flow_class.__name__] = flow_class
 
-    # Persistence
+    # ==== Persistence ====
     def save(self, to_file: str) -> None:
         pass  # TODO implement
 

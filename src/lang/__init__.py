@@ -1,1 +1,1 @@
-from interpreter import FlowLang, FlowLangBase
+from lang.interpreter import FlowLang, FlowLangBase
