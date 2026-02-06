@@ -2,7 +2,8 @@
 ==== FUTURE CONSIDERATIONS ====
 - For the 'init' directive, maybe use a save eval such as evalidate rather than the current eval().
 """
-from typing import Any, Type, Iterator, Sequence, cast
+from typing import Any, Type, Iterator, Sequence, Callable, cast
+type SpecialSelector = Callable[[Any], str]
 from llm_module import LLMSelector
 
 # Import the base engine classes
@@ -26,7 +27,7 @@ RULE_MAPPER: dict[str, Type[BaseRule]] = {
 }
 
 
-def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector | None = None) -> Selector:
+def interpret_selector(selector_data: dict[str, Any], special_selector: SpecialSelector | None = None) -> Selector:
     """Converts AST selector data into a clean Selector NamedTuple."""
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
@@ -36,8 +37,8 @@ def interpret_selector(selector_data: dict[str, Any], llm_selector: LLMSelector 
         return Selector(type=s_type, selector=s_value)
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
-    elif s_type == "llm_prompt" and llm_selector:
-        return Selector(type='regex', selector=llm_selector.prompt(s_value))
+    elif s_type == "llm_prompt" and special_selector:
+        return Selector(type='regex', selector=special_selector(s_value))
     raise ValueError(f"Unknown selector type: {s_type}")
 
 
@@ -54,7 +55,7 @@ def interpret_target(selector_data: dict[str, Any]) -> Target:
     raise ValueError(f"Unknown target type: {t_type}")
 
 
-def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], llm_selector: LLMSelector) -> Iterator[BaseRule]:
+def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], special_selector: SpecialSelector | None = None) -> Iterator[BaseRule]:
     """
     Iterates over the flat list of instructions, instantiates the correct
     Rule subclass, merges flags, and initializes fields.
@@ -70,7 +71,7 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
         if not instruction['selector']:
             print(f'Warning: All rules must have a selector. Skipping rule.')
             continue
-        selectors = [interpret_selector(sd, llm_selector) for sd in instruction['selector']]
+        selectors = [interpret_selector(sd, special_selector) for sd in instruction['selector']]
         target = [interpret_target(td) for td in instruction['target']]
 
         # Instantiate Rule
@@ -122,13 +123,25 @@ def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, An
     return returns
 
 
-class FlowLang(Flow):
+# TODO: decouple the self.events from the compilation phase so that rulesets can be changed without affecting the current evolution!!!
+class FlowLangBase(Flow):
+    """The general API of the Flow object used in all language implementations."""
+
+    def interpret(self, s: str, *args, **kwargs) -> None:
+        """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
+        raise NotImplementedError()
+
+    def interpret_file(self, path: str, *args, **kwargs) -> None:
+        """opens `.flow` files and constructs a FlowLang object."""
+        with open(path, 'r') as f:
+            return self.interpret(f.read(), *args, **kwargs)
+
+
+class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def __init__(self, lang: str, init_space: Sequence[str] | str | None = None):  # init_space can be none if the @init directive is defined.
-        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(lang)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
-        if isinstance(init_space, str):
-            init_space = (init_space,)
+    def __init__(self, flow_str: str) -> None:
+        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(flow_str)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         r: dict[str, Any] = interpret_directives(
             {
                 'init': lambda *args: map(eval, map(str, args)),  # used to set the initial universe conditions.
@@ -136,7 +149,7 @@ class FlowLang(Flow):
                 # I know, I know... eval is unsafe. But in this context, I think it's fine because FlowLang is a language built on top of python. Just be careful if using FlowLang on a deployed server for users to use.
                 'mem': lambda mode: mode,  # used to set the cells container for the SpaceState.
 
-                # setters
+                # setters (note: make sure to update any presets in the parser if names are changed here)
                 'target_cache': vec.enable_bytes_cache,
                 'pattern_cache': vec.enable_pattern_cache,
                 'regex_backend': vec.set_regex_backend,
@@ -146,24 +159,17 @@ class FlowLang(Flow):
             },
             self.ast['directives']
         )
-        if init_space is None:
-            try:
-                init_space = r['init']
-            except KeyError:
-                raise ValueError("An `@init(<space>)` directive must be present if the `init_space` argument is not provided.")
         Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        self.llm_selector: LLMSelector = LLMSelector()
-        super().__init__(RuleSet(
+        super().__init__()
+        self.set_ruleset(RuleSet(
             list(
                 interpret_instructions(
                     self.ast['instructions'],
-                    self.ast['global_flags'],
-                    llm_selector=self.llm_selector
+                    self.ast['global_flags']
                 )
             )
-        ),
-            [SpaceState(Vec([Cell(s) for s in string])) for string in init_space]
-        )
+        ))
+        self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
 
         # after instantiation
         interpret_directives({
@@ -205,12 +211,6 @@ class FlowLang(Flow):
                             rule_is_active = True
             if not rule_is_active:
                 rule.disabled = True
-
-    @classmethod
-    def from_file(cls, path: str):
-        """opens `.flow` files and constructs a FlowLang object."""
-        with open(path, 'r') as f:
-            return cls(f.read())
 
 
 if __name__ == "__main__":

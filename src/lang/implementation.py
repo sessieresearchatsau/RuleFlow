@@ -12,14 +12,14 @@ Future Considerations:
 from typing import Sequence, NamedTuple, Literal, cast, Iterator
 from copy import deepcopy, copy
 from numerical_helpers import INF
+from core.signals import Signal
 from core.engine import (
     SpaceState1D as SpaceState,
     Cell,
     Rule as RuleABC,
     RuleMatch,
     DeltaSpace,
-    DeltaCell,
-    Signal
+    DeltaCell
 )
 
 

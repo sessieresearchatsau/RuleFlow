@@ -1,28 +1,8 @@
-from typing import Any, Callable, Sequence, MutableSequence, NamedTuple, Iterator
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from copy import copy
-import re
-
-# helper
-class Signal:
-    """Implements a QT-like signal system using traditional callbacks."""
-    __slots__ = 'callables', 'callables_count'
-    def __init__(self) -> None:
-        self.callables: list[Callable] = []
-        self.callables_count: int = 0
-
-    def emit(self, *args, **kwargs) -> None:
-        for c in self.callables: c(*args, **kwargs)
-
-    def connect(self, func: Callable) -> None:
-        if func in self.callables: return
-        self.callables.append(func)
-        self.callables_count = len(self.callables)
-
-    def disconnect(self, func: Callable) -> None:
-        self.callables.remove(func)
-        self.callables_count = len(self.callables)
+from core.signals import Signal
 
 
 # ==== engine ====
@@ -43,7 +23,7 @@ class Cell:
     # NOTE: the metadata is the ONLY thing that makes cells differentiable (other than quanta of course)
     # Metadata regarding the creation and destruction of the cell... stored as indices to the events array.
     created_at: int = 0  # this is the ONLY piece important metadata needed for a causality graph (can only be created one, so one event index)
-    destroyed_at: tuple[int] = ()  # OPTIONAL metadata useful for analysis. Is an array of event indices (multiple indices for multiway systems)
+    destroyed_at: tuple[int, ...] = ()  # OPTIONAL metadata useful for analysis. Is an array of event indices (multiple indices for multiway systems)
 
     def __str__(self):
         """String representation of quanta"""
@@ -416,27 +396,54 @@ class Event:
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
-    def __init__(self, rule_set: RuleSet,
-                 initial_space: Sequence[SpaceState]):
-        self.events: list[Event] = [
-            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be i as well so that next evolve() works.
-        ]
-        self.rule_set: RuleSet = rule_set  # can be changed at any time to provide a new set of rules.
-        self.initial_space: Sequence[SpaceState] = initial_space  # just useful to keep track of, but only used in .clear_evolution()
-        # TODO: add the .graph attribute that updates as evolve happens.
+    # Signals (can be used to live update analysis objects like the causal graph)
+    on_evolve: Signal
+    on_undo: Signal
 
-        # make sure the initial cells in the space is connected to the creation event.
+    def __init__(self):
+        self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
+        self.events: list[Event] = []  # defaults to empty... but nothing will work properly
+        self.event_index_offset: int = 0
+
+    def set_ruleset(self, ruleset: RuleSet) -> None:
+        """Used to set the rule set"""
+        self.rule_set: RuleSet = ruleset
+
+    def set_initial_space(self, initial_space: Sequence[SpaceState]) -> None:
+        """Used to set the initial space"""
+        self.events.insert(
+            0,
+            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be i as well so that next evolve() works.
+        )
         for i in initial_space:
             for cell in i.get_all_cells():
                 cell.created_at = 0
 
+    def clear_evolution(self) -> None:
+        """Clear the evolution."""
+        del self.events[1:]
+
     @property
     def current_event(self) -> Event:
-        return self.events[-1]
+        try:
+            return self.events[self.current_event_idx]
+        except IndexError:  # when the offset is too large or no events exist
+            if len(self.events) == 0:
+                raise IndexError('No events exist')
+            self.set_event_offset(0)  # fix offset
+            return self.current_event
 
     @property
     def current_event_idx(self) -> int:
-        return len(self.events) - 1
+        return len(self.events) - 1 - self.event_index_offset
+
+    def set_event_offset(self, offset: int, from_init: bool = False) -> None:
+        """Shift the current index in the flow of events"""
+        if offset < 0:
+            raise ValueError('Offset cannot be negative')
+        if from_init:
+            offset = len(self.events) - 1 - offset
+        self.event_index_offset = offset
 
     def evolve(self) -> None:
         """ Evolve the system by one step.
@@ -447,7 +454,6 @@ class Flow:
         - Update event and cell metadata (important for tracking causality)
             - set the applied rules (the applied rules are associated with the space states they modified)
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
-            - process the self.pending_deltas (update the cell's created_by and destroyed_by fields)
         """
         applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
@@ -473,27 +479,37 @@ class Flow:
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
         self.current_event.causal_distance_to_creation = min_prev + 1
 
-    def evolve_n(self, n_steps: int) -> None:
+    def evolve_n(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
-        for _ in range(n_steps):
+        while n_steps > 0:
             # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
             self.evolve()
+            n_steps -= 1
+            if break_when_inert and self.current_event.inert:
+                break
 
-    def evolve_until_inert(self, max_steps: int = 1000) -> None:
-        """Evolve the system until the events become inert."""
-        while not self.current_event.inert and max_steps:
-            self.evolve()
-            max_steps -= 1
+    def undo(self) -> None:
+        """undo the last event..."""
+        if self.current_event_idx == 0:
+            return
+        for ar in self.current_event.space_deltas:
+            for sd in ar.space_deltas:
+                for dc in sd.cell_deltas:
+                    for cell in dc.destroyed_cells:
+                        cell.destroyed_at = tuple(i for i in cell.destroyed_at if i != self.current_event_idx)
+                    if self.event_index_offset:  # shift the created_at up if we are in the middle of an evolution
+                        for cell in dc.new_cells:
+                            cell.created_at = current_event_idx + 1
+        self.events.pop(self.current_event_idx)
 
-    def clear_evolution(self, new_initial_space: Sequence[SpaceState] | None = None) -> None:
-        """Clear the evolution."""
-        self.events.clear()
-        self.__init__(self.rule_set, new_initial_space if new_initial_space else self.initial_space)  # just resets everything
+    def undo_n(self, n_steps: int) -> None:
+        for _ in range(n_steps):
+            self.undo()
 
     def __str__(self) -> str:
         return self.print(print_to_terminal=False)
 
-    def print(self,
+    def print(self,  # TODO: this should not be here... goes in printer or explorer module.
               show_time_steps: bool = True,
               show_causally_connected_events: bool = False,
               show_causal_distance_to_creation: bool = False,
