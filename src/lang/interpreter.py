@@ -4,7 +4,6 @@
 """
 from typing import Any, Type, Iterator, Sequence, Callable, cast
 type SpecialSelector = Callable[[Any], str]
-from llm_module import LLMSelector
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
@@ -27,7 +26,7 @@ RULE_MAPPER: dict[str, Type[BaseRule]] = {
 }
 
 
-def interpret_selector(selector_data: dict[str, Any], special_selector: SpecialSelector | None = None) -> Selector:
+def interpret_selector(selector_data: dict[str, Any], caller_selector: SpecialSelector | None = None) -> Selector:
     """Converts AST selector data into a clean Selector NamedTuple."""
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
@@ -37,8 +36,8 @@ def interpret_selector(selector_data: dict[str, Any], special_selector: SpecialS
         return Selector(type=s_type, selector=s_value)
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
-    elif s_type == "llm_prompt" and special_selector:
-        return Selector(type='regex', selector=special_selector(s_value))
+    elif s_type == "llm_prompt" and caller_selector:
+        return Selector(type='regex', selector=caller_selector(s_value))
     raise ValueError(f"Unknown selector type: {s_type}")
 
 
@@ -55,7 +54,7 @@ def interpret_target(selector_data: dict[str, Any]) -> Target:
     raise ValueError(f"Unknown target type: {t_type}")
 
 
-def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], special_selector: SpecialSelector | None = None) -> Iterator[BaseRule]:
+def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], caller_selector: SpecialSelector | None = None) -> Iterator[BaseRule]:
     """
     Iterates over the flat list of instructions, instantiates the correct
     Rule subclass, merges flags, and initializes fields.
@@ -71,7 +70,7 @@ def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str,
         if not instruction['selector']:
             print(f'Warning: All rules must have a selector. Skipping rule.')
             continue
-        selectors = [interpret_selector(sd, special_selector) for sd in instruction['selector']]
+        selectors = [interpret_selector(sd, caller_selector) for sd in instruction['selector']]
         target = [interpret_target(td) for td in instruction['target']]
 
         # Instantiate Rule
@@ -218,7 +217,8 @@ if __name__ == "__main__":
     import os
     import gc
     import timeit
-    from pprint import pprint
+
+
     def get_mem():
         """Returns current resident set size in MB."""
         process = psutil.Process(os.getpid())
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
     # Run Simulation
     code = """
-    @mem(TrieVec);
+    // @mem(TrieVec);
     @init("AB");
     ABA -> AAB;
     A -> ABA;
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     // BC -> ACB;
     // A -> ACB;
     """
-    flow = FlowLang.from_file('eca.flow')
+    flow = FlowLang(code)
     time = timeit.timeit(lambda: flow.evolve_n(18), number=1)
 
     mem_end = get_mem()

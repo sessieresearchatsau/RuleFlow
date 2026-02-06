@@ -21,7 +21,7 @@ instruction: [selector*] operator [target*] [flags]
 
 // --- Selector ---
 selector: regex_term
-        | llm_term
+        | caller_term  // this can be used, for instance, by an LLM to transform text into a specialized selector.
         | range_term
         | literal_term
 
@@ -30,7 +30,7 @@ target: literal_term
 
 // We define these as specific terminals to prevent ambiguity
 regex_term: REGEX_LITERAL
-llm_term: STRING_LITERAL
+caller_term: STRING_LITERAL
 range_term: RANGE_LITERAL
 literal_term: SIMPLE_LITERAL
 

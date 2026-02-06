@@ -180,8 +180,8 @@ class FlowLangTransformer(Transformer):
     def literal_term(self, items):
         return {"type": "literal", "value": items[0].value}
 
-    def llm_term(self, items):
-        return {"type": "llm_prompt", "value": items[0].value[1:-1]}
+    def caller_term(self, items):
+        return {"type": "caller", "value": items[0].value[1:-1]}
 
     def range_term(self, items):
         # Parse [x,y] or [x]
@@ -268,6 +268,8 @@ if __name__ == "__main__":
     # // Run n times
     # @evolve(16);
     # """)
-    t = parser.parse("""A_B --> _A_;""")
+    t = parser.parse("""
+    "test" --> _A_;
+     """)
     print(type(t))
     pprint(t)

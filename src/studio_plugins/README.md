@@ -1,0 +1,1 @@
+This directory contains the official external plugins for RuleFlow Studio.

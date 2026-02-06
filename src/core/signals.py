@@ -2,7 +2,10 @@ from typing import Callable, Hashable, Any
 
 
 class Signal:
-    """Implements a QT-like signal system with instance-specific filtering."""
+    """Implements a QT-like signal system with instance-specific filtering.
+
+    Please note that any connected functions will KEEP result in them staying alive in memory until disconnected (so make sure to disconnect any methods before deleting and object).
+    """
     __slots__ = ('callables', 'restricted_callables')
 
     def __init__(self) -> None:
@@ -20,9 +23,13 @@ class Signal:
             c(*args, **kwargs)
 
         # Instance-restricted callbacks
-        if args and args[0] in self.restricted_callables:
+        try:
             for c in self.restricted_callables[args[0]]:
                 c(*args, **kwargs)
+        except (TypeError,  # in the event that args[0] is not hashable... must use try-catch due to fake hash being detected on certain objects (like RuleMatch) that contain un-hashables.
+                KeyError,  # if the args[0] does not exist in the dictionary
+                IndexError):  # if the index 0 does not exist in args.
+            pass
 
     def connect(self, func: Callable, restrict_to_instance: Hashable = None) -> None:
         if restrict_to_instance is not None:
