@@ -1,14 +1,15 @@
 """View/Controller side of the MVC paradigm"""
-from typing import cast
+from pathlib import Path
+from typing import cast, Iterable
 from textual.app import App, ComposeResult
 from textual.containers import Container, Center, Horizontal, Vertical
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
-    DirectoryTree, TextArea, Button, Label,
+    DirectoryTree as _DT, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input,
     Footer, ContentSwitcher, Static
 )
-from textual.widgets.option_list import Option
+from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on, events
 from studio import config
 from studio import model
@@ -27,6 +28,13 @@ class Spacer(Static):
     def __init__(self):
         super().__init__()
         self.styles.width = '1fr'  # make it take up as much space as possible
+
+
+class DirectoryTree(_DT):
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        for path in paths:
+            if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
+                yield path
 
 
 class ModalDialog(ModalScreen[dict]):
@@ -66,7 +74,7 @@ class ModalDialog(ModalScreen[dict]):
                         ipt.border_title = cfg.get("prompt", "")
                         yield ipt
 
-                    # TODO: Add SelectionList support
+                    # Maybe add SelectionList support at some point
                     pass
 
             with Horizontal(id="modal-buttons"):
@@ -78,8 +86,7 @@ class ModalDialog(ModalScreen[dict]):
                         id="modal-dialog-submit-btn" if index == 0 else None
                     )
 
-    @on(Button.Pressed)
-    def handle_button(self, event: Button.Pressed):
+    def on_button_pressed(self, event: Button.Pressed):
         # Package the state of all inputs and the button identity
         results = {
             "button_pressed": event.button.name,
@@ -89,8 +96,7 @@ class ModalDialog(ModalScreen[dict]):
         }
         self.dismiss(results)
 
-    @on(Input.Submitted)
-    def handle_submit(self):
+    def on_input_submitted(self):
         # noinspection PyUnresolvedReferences
         self.query_one("#modal-dialog-submit-btn").press()
 
@@ -116,7 +122,7 @@ class WelcomeScreen(Screen):
                 yield Button("🗑  Remove", id="btn-remove-recent", variant="default")
 
     @on(Button.Pressed, "#btn-new-project")
-    def action_new_project_path(self):
+    def btn_new_project(self):
         """Calls the UniversalModal to get a new project path."""
 
         def handle_modal_result(result: dict | None):
@@ -132,12 +138,15 @@ class WelcomeScreen(Screen):
             if not path or not name:
                 self.notify("Both a name and project path must be provided.", severity="error")
                 return
-            if not config.path_isdir(path):
+            if not Path(path).is_dir():
                 self.notify('Please enter a valid path to a directory.', severity='error')
                 return
-            self.notify(f"Loaded project at: {path}")
-            self.query_one("#recents-list").add_option(Option(f'{name} [grey]({path})[/grey]', name))
-            config.RecentProjects.add(name, path)
+            try:
+                self.query_one("#recents-list").add_option(Option(f'{name} [grey]({path})[/grey]', name))
+                config.RecentProjects.add(name, path)
+                self.notify(f"Loaded project at: {path}")
+            except DuplicateIDError:
+                self.notify(f"That name has already been reserved!", severity="error")
 
         # Push the screen with the configuration and callback
         self.app.push_screen(
@@ -165,7 +174,7 @@ class WelcomeScreen(Screen):
         )
 
     @on(Button.Pressed, "#btn-open-project")
-    def on_open(self):
+    def btn_open_project(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
         if i:=_.highlighted_option:
             self.app.MODEL.project_name = i.id  # id is the name the user has given for the project.
@@ -175,7 +184,7 @@ class WelcomeScreen(Screen):
             self.notify('Please select a project to open!', severity='warning')
 
     @on(Button.Pressed, "#btn-remove-recent")
-    def on_remove(self):
+    def btn_remove_recent(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
         if i:=_.highlighted_option:
             _.remove_option(i.id)
@@ -189,37 +198,47 @@ class EditorScreen(Screen):
     """
     The main IDE interface matching Image 2 with dynamic sidebar logic.
     """
-    BINDINGS = [
+    BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
         ("ctrl+s", "save_file", "Save File"),
+        ("ctrl+r", "run", "Run"),
         ("ctrl+f1", "toggle_left_sidebar", "Toggle Left"),
         ("ctrl+f2", "toggle_right_sidebar", "Toggle Right"),
         ("shift+f1", "toggle_code_editor", "Toggle Code"),
         ("shift+f2", "toggle_bottom_panel", "Toggle Panel"),
-        ("ctrl+shift+f1", "toggle_max", "Toggle Max")
+        ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
     ]
 
-    def on_screen_resume(self, event: events.ScreenResume) -> None:
+    def on_screen_resume(self) -> None:
         """Whenever this screen is pushed, update the current project"""
+        # load project label
         label: Label = self.query_one("#project-title-label")
         label.update(f"⭘ {self.app.MODEL.project_name}")
+
+        # set project path
         dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
         dir_tree.path = str(self.app.MODEL.project_path)
         dir_tree.reload()
+
+        # load flows
+        ol: Select = self.query_one("#select_flow")
+        ol.set_options([(f.name, i) for i, f in enumerate(self.app.MODEL.flows)])
+        # noinspection PyProtectedMember
+        ol._init_selected_option(0)  # select the first option
 
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
         with Vertical(id="project-directory"):
             yield Label("", id="project-title-label", classes="pane-header")
             yield DirectoryTree("", id="project-dir-tree")
-            yield Button("↻  Refresh Directory", id='refresh_project_dir_btn', classes='full-width gray')
-            yield Button("↩  Project Manager", id='back_to_projects_btn', classes='full-width gray')
+            yield Button("↻  Refresh Directory", id='btn_refresh_project_dir', classes='full-width gray')
+            yield Button("↩  Exit to Project Manager", id='btn_back_to_projects', classes='full-width gray')
 
         # --- MIDDLE COLUMN: Workspace ---
         with Vertical(id="workspace"):
             # Top Toolbar
             with Horizontal(id='workspace-toolbar'):
                 yield Label("▼ ", classes='gray')
-                yield Select([("Flow 1", str)], id="select-flow", allow_blank=False, compact=True)
+                yield Select((), id="select_flow", compact=True)
                 yield Button('+', id="btn-add-flow", compact=True, classes='increment-btn green')
                 yield Button('-', id="btn-sub-flow", compact=True, classes='increment-btn red')
                 yield Spacer()
@@ -232,11 +251,12 @@ class EditorScreen(Screen):
                 yield Button("Clear", id="btn-clear", classes="action-btn red", compact=True)
 
             # Code Editor
-            yield TextArea.code_editor(
+            yield (_:=TextArea.code_editor(
                 text="// Select a .flow file to begin...",
                 id="code-editor",
                 disabled=True
-            )
+            ))
+            # _.register_language()
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
@@ -280,15 +300,36 @@ class EditorScreen(Screen):
         else:
             self.maximize(self.focused)
 
-    @on(TabbedContent.TabActivated)
-    def on_tab_switch(self, event: TabbedContent.TabActivated):
+    # ==== Top Bar ====
+    @on(Button.Pressed, '#btn-add-flow')
+    def btn_add_flow(self):
+        pass
+
+    @on(Button.Pressed, '#btn-sub-flow')
+    def btn_remove_flow(self):
+        pass
+
+    @on(Button.Pressed, "#btn-clear")
+    def btn_clear_run(self):
+        pass
+
+    @on(Button.Pressed, "#btn-debug")
+    def btn_debug(self):
+        pass
+
+    @on(Button.Pressed, "#btn-run")
+    def action_run(self):
+        pass
+
+    # ==== Panel and Controls ====
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
         """
         Dynamically switches the Right Sidebar content AND Title.
         """
-        pass  # TODO auto switch the plugin controls...
+        pass
 
-    @on(Button.Pressed, '#back_to_projects_btn')
-    def handle_back_to_projects_btn(self):
+    @on(Button.Pressed, '#btn_back_to_projects')
+    def btn_back_to_projects(self):
         def handle_modal_result(result: dict | None):
             if not result:
                 return
@@ -296,44 +337,30 @@ class EditorScreen(Screen):
             if button == "Cancel":
                 return
             elif button == "Yes":
-                self.notify(f"Flow States Saved...")
-            else:  # button == "no"
-                self.notify(f"Exited Flow Editor...")
+                self.notify(f"Saving Plugin Settings...")
             self.app.push_screen("welcome")
+            self.notify(f"Exited Editor...")
 
         # Push the screen with the configuration and callback
         self.app.push_screen(
             ModalDialog(
-                title="Save Project State?",
+                title="Save Plugin Configuration?",
                 fields=[
                     {
                         "type": "note",
-                        "text": "Please type the names of flows that you want to save."
-                    },
-                    {
-                        "type": "input",
-                        "prompt": "Flow Names",
-                        "placeholder": "Flow1, Flow2, ..."
+                        "text": "Saving the plugin configuration directs all plugins to save their settings (if supported)."
                     }
                 ],
-                buttons=["Yes", "No", "Cancel"]
+                buttons=["No", "Yes", "Cancel"]
             ),
             callback=handle_modal_result
         )
 
-    @on(Button.Pressed, '#refresh_project_dir_btn')
-    def handle_refresh_project_dir_btn(self):
+    @on(Button.Pressed, '#btn_refresh_project_dir')
+    def btn_refresh_project_dir(self):
         dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
         dir_tree.reload()
         self.notify(f"Refreshed Project Directory...")
-
-    @on(Button.Pressed, "#btn-run")
-    def action_run(self):
-        pass
-
-    @on(Button.Pressed, "#btn-clear")
-    def action_clear(self):
-        pass
 
 
 class Main(App):
@@ -343,16 +370,15 @@ class Main(App):
     ]
 
     def on_mount(self):
-        # self.model = Model()  # this is the Model side of the MVC design
+        self.MODEL = model.Model()  # this is the Model side of the MVC design
+
+        # create the screens and push the welcome page
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
-        self.MODEL = model.Model()
         self.push_screen("welcome")
-
-    def action_save_file(self):
-        self.notify("File saved successfully.")
 
 
 if __name__ == "__main__":
+    import textual.events
     app = Main()
     app.run()

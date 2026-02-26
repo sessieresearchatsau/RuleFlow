@@ -1,16 +1,14 @@
-from json import JSONDecodeError
-from typing import cast
 from platformdirs import user_data_path as _user_data_path
 import json
 from pathlib import Path
-from os.path import exists as path_exists, isdir as path_isdir
 
-
+# Studio Config Globals
 APPNAME: str = "RuleFlow Studio"
 VERSION: str = "v0.1.0"
 BREAKING_VERSION: str = "v0.1.0"  # determines if a new config folder is needed
 USER_DATA_DIR_PATH: Path = _user_data_path(APPNAME, None, BREAKING_VERSION, ensure_exists=True)
 PROJECTS_LIST_PATH: Path = USER_DATA_DIR_PATH.joinpath('projects.json')
+SUPPORTED_FILE_TYPES: list[str] = ["*.flow", "*.md"]
 
 
 class __RecentProjects:
@@ -45,4 +43,4 @@ class __RecentProjects:
     def remove(self, name: str) -> None:
         del self.data[name]
         self._save_changes()
-RecentProjects = __RecentProjects()
+RecentProjects = __RecentProjects()  # Singleton Instance

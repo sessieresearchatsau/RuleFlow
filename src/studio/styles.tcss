@@ -165,6 +165,11 @@ EditorScreen {
     padding: 1 2;
 }
 
+/*The flow selector dropdown*/
+#select_flow {
+    width: 10;
+}
+
 #code-editor {
     height: 1fr;
     margin-bottom: 1;
@@ -205,10 +210,6 @@ EditorScreen {
 
 .action-btn {
     min-width: 8;
-}
-
-Select {
-    width: 8;
 }
 
 .increment-btn {

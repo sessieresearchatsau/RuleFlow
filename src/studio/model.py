@@ -18,10 +18,12 @@ class Flow:
     Represents
     """
     def __init__(self):
+        self.flow: FlowL | None = None
+        self.src: str = ""
+
+        # metadata
         self.name: str = ""
         self.file_path: Path = Path()
-        self.src: str = ""
-        self.flow: FlowL | None = None
         self.is_dirty: bool = False
 
     def save_file(self):
@@ -40,7 +42,7 @@ class Model:
     on_save: Signal = Signal()
 
     def __init__(self) -> None:
-        self.project_name: str = "" # name the user has given the project
+        self.project_name: str = ""  # name the user has given the project
         self.project_path: Optional[Path] = None
 
         # Flow Classes (selected when creating a new Flow instance)
@@ -52,16 +54,23 @@ class Model:
         self.flows: list[Flow] = []
         self.active_flow: Optional[Flow] = None
 
-    def set_root_path(self, path: str | Path) -> None:
-        """Sets the working directory."""
-        self.project_path = Path(path)
+        # add default
+        self.flows.append(_:=Flow())
+        _.name = "Root"
 
     def get_flow_options(self) -> list[str]:
         """
         Returns list of tuples formatted for a Textual Select widget.
-        Format: [(Label, Value), ...]
         """
         return [f.name for f in self.flows]
+
+    def create_new_flow(self, name: str, flow_class: str, copy_active_flow: bool) -> bool:
+        """Create a new Flow object and return True if the flow was created, otherwise False."""
+        return False
+
+    def delete_selected_flow(self) -> None:
+        self.flows.remove(self.active_flow)
+        self.active_flow = None
 
     # ==== Flow Class ====
     @property
@@ -72,6 +81,7 @@ class Model:
         self.selected_flow_class = name
 
     def register_flow_class(self, flow_class: type[FlowL]) -> None:
+        """Can be used (likely by a plugin) to register a new type of FlowL class (implementation)."""
         self.flow_classes[flow_class.__name__] = flow_class
 
     # ==== Persistence ====
@@ -104,3 +114,7 @@ class Plugin(ABC):
     def controls(self) -> tuple[str, list[Collapsible]] | None:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
         return None
+
+    def save_configuration(self):
+        """Optional method to implement that is called by the editor when exiting."""
+        pass
