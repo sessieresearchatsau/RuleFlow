@@ -30,7 +30,8 @@ ModalDialog {
     max-height: 90vh;  /* Ensure the modal doesn't grow off-screen if there are many inputs */
     background: #252526;
     border: thick #007acc;
-    padding: 1 2;
+    padding: 0 1;
+    overflow-y: auto;
 }
 
 /* Title and Content Container */
@@ -71,6 +72,10 @@ ModalDialog Input:focus {
 }
 
 /* Buttons */
+ModalDialog Checkbox {
+    width: 100%;
+}
+
 #modal-buttons {
     width: 100%;
     height: 3;
@@ -166,7 +171,7 @@ EditorScreen {
 }
 
 /*The flow selector dropdown*/
-#select_flow {
+#select-flow {
     width: 10;
 }
 

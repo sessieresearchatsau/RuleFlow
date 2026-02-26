@@ -139,9 +139,6 @@ class FlowLangBase(Flow):
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def __init__(self) -> None:
-        super().__init__()
-
     def interpret(self, s: str) -> None:
         self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(s)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         r: dict[str, Any] = interpret_directives(

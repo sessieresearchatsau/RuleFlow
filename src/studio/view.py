@@ -7,7 +7,7 @@ from textual.screen import Screen, ModalScreen
 from textual.widgets import (
     DirectoryTree as _DT, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input,
-    Footer, ContentSwitcher, Static
+    Footer, ContentSwitcher, Static, Checkbox
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on, events
@@ -40,7 +40,7 @@ class DirectoryTree(_DT):
 class ModalDialog(ModalScreen[dict]):
     """
     A flexible modal with border-titled inputs, notes, and dynamic buttons.
-    Returns: {"button_pressed": str, "inputs": {id: value}}
+    Returns: {"pressed_button": str, "inputs": {id: value}}
     """
 
     def __init__(self,
@@ -68,12 +68,18 @@ class ModalDialog(ModalScreen[dict]):
                             placeholder=cfg.get("placeholder", ""),
                             id=cfg.get("id"),
                             password=cfg.get("password", False),
-                            value=str(cfg.get("initial", ""))
+                            value=cfg.get("initial")
                         )
                         # Set the prompt as the border title
                         ipt.border_title = cfg.get("prompt", "")
                         yield ipt
 
+                    elif field_type == "checkbox":
+                        yield Checkbox(
+                            label=cfg.get("label", ""),
+                            value=cfg.get("initial", False),
+                            id=cfg.get("id")
+                        )
                     # Maybe add SelectionList support at some point
                     pass
 
@@ -89,9 +95,12 @@ class ModalDialog(ModalScreen[dict]):
     def on_button_pressed(self, event: Button.Pressed):
         # Package the state of all inputs and the button identity
         results = {
-            "button_pressed": event.button.name,
-            "inputs": {
+            "pressed_button": event.button.name,
+            "input": {
                 ipt.id: ipt.value for ipt in self.query(Input) if ipt.id
+            },
+            "checkbox": {
+                chk.id: chk.value for chk in self.query(Checkbox) if chk.id
             }
         }
         self.dismiss(results)
@@ -119,20 +128,16 @@ class WelcomeScreen(Screen):
                 yield Button("📂 Open", id="btn-open-project", variant="primary")
                 yield Button("➕ New", id="btn-new-project", variant="default")
                 yield Spacer()
-                yield Button("🗑  Remove", id="btn-remove-recent", variant="default")
+                yield Button("🗑  Forget", id="btn-remove-recent", variant="default")
 
     @on(Button.Pressed, "#btn-new-project")
     def btn_new_project(self):
         """Calls the UniversalModal to get a new project path."""
 
-        def handle_modal_result(result: dict | None):
-            if not result:
+        def handle_modal_result(result: dict):
+            if result["pressed_button"] != "Create":
                 return
-
-            button = result.get("button_pressed")
-            if button != "Create":
-                return
-            inputs = result.get("inputs", {})
+            inputs = result.get("input", {})
             name = inputs.get("project_name", "").strip()
             path = inputs.get("project_path", "").strip()
             if not path or not name:
@@ -208,6 +213,16 @@ class EditorScreen(Screen):
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
     ]
 
+    def __update_flow_selector(self):
+        # load flows
+        m: model.Model = self.app.MODEL
+        ol: Select = self.query_one("#select-flow")
+        ol.set_options([(f.name, i) for i, f in enumerate(m.flows)])
+        try:
+            # noinspection PyProtectedMember
+            ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
+        except: pass
+
     def on_screen_resume(self) -> None:
         """Whenever this screen is pushed, update the current project"""
         # load project label
@@ -220,10 +235,7 @@ class EditorScreen(Screen):
         dir_tree.reload()
 
         # load flows
-        ol: Select = self.query_one("#select_flow")
-        ol.set_options([(f.name, i) for i, f in enumerate(self.app.MODEL.flows)])
-        # noinspection PyProtectedMember
-        ol._init_selected_option(0)  # select the first option
+        self.__update_flow_selector()
 
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
@@ -238,7 +250,7 @@ class EditorScreen(Screen):
             # Top Toolbar
             with Horizontal(id='workspace-toolbar'):
                 yield Label("▼ ", classes='gray')
-                yield Select((), id="select_flow", compact=True)
+                yield Select((), id="select-flow", compact=True)
                 yield Button('+', id="btn-add-flow", compact=True, classes='increment-btn green')
                 yield Button('-', id="btn-sub-flow", compact=True, classes='increment-btn red')
                 yield Spacer()
@@ -303,14 +315,75 @@ class EditorScreen(Screen):
     # ==== Top Bar ====
     @on(Button.Pressed, '#btn-add-flow')
     def btn_add_flow(self):
-        pass
+        def handle_modal_result(result: dict) -> None:
+            if result["pressed_button"] == "Cancel":
+                return
+            if not result["input"]["flow_name"]:
+                self.notify("A new flow must be given a name!", severity="error")
+                return
+            if not self.app.MODEL.create_new_flow(result["input"]["flow_name"], result["checkbox"]["branch_checkbox"]):
+                self.notify(f"A flow with name \"{result["input"]["flow_name"]}\" already exists.", severity="error")
+                return
+            self.__update_flow_selector()
+            self.notify(f"Created the \"{self.app.MODEL.active_flow.name}\" flow session...")
+
+        # Push the screen with the configuration and callback
+        self.app.push_screen(
+            ModalDialog(
+                title="Flow Creation Tool",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Create a new flow session and optionally branch it from the current flow session."
+                    },
+                    {
+                        "type": "input",
+                        "prompt": "New Flow Name",
+                        "placeholder": "e.g. Flow1",
+                        "id": "flow_name"
+                    },
+                    {
+                        "type": "checkbox",
+                        "label": "Branch from current flow session",
+                        "id": "branch_checkbox",
+                    }
+                ],
+                buttons=["Create", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
 
     @on(Button.Pressed, '#btn-sub-flow')
     def btn_remove_flow(self):
-        pass
+        if not self.app.MODEL.active_flow:
+            self.notify("Empty flow sessions!", severity="error")
+            return
+        def handle_modal_result(result: dict):
+            if result.get("pressed_button") == "Yes":
+                self.notify(f"Deleted the \"{self.app.MODEL.active_flow.name}\" flow session...")
+                self.app.MODEL.delete_selected_flow()
+                self.__update_flow_selector()
+        self.app.push_screen(
+            ModalDialog(
+                title="Delete Flow?",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Please confirm flow deletion..."
+                    }
+                ],
+                buttons=["Yes", "No", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    @on(Select.Changed, '#select-flow')
+    def select_flow(self, event: Select.Changed):
+        if isinstance(event.value, int):
+            self.app.MODEL.active_flow = self.app.MODEL.flows[event.value]
 
     @on(Button.Pressed, "#btn-clear")
-    def btn_clear_run(self):
+    def btn_clear(self):
         pass
 
     @on(Button.Pressed, "#btn-debug")
@@ -323,23 +396,21 @@ class EditorScreen(Screen):
 
     # ==== Panel and Controls ====
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
-        """
-        Dynamically switches the Right Sidebar content AND Title.
-        """
+        """Dynamically switches the Right Sidebar content AND Title."""
         pass
 
+    # ==== Panel and Controls ====
     @on(Button.Pressed, '#btn_back_to_projects')
     def btn_back_to_projects(self):
-        def handle_modal_result(result: dict | None):
-            if not result:
-                return
-            button = result.get("button_pressed")
+        def handle_modal_result(result: dict):
+            button = result["pressed_button"]
             if button == "Cancel":
                 return
             elif button == "Yes":
                 self.notify(f"Saving Plugin Settings...")
+            else:
+                self.notify(f"Exited Editor...")
             self.app.push_screen("welcome")
-            self.notify(f"Exited Editor...")
 
         # Push the screen with the configuration and callback
         self.app.push_screen(
@@ -351,7 +422,7 @@ class EditorScreen(Screen):
                         "text": "Saving the plugin configuration directs all plugins to save their settings (if supported)."
                     }
                 ],
-                buttons=["No", "Yes", "Cancel"]
+                buttons=["Yes", "No", "Cancel"]
             ),
             callback=handle_modal_result
         )
