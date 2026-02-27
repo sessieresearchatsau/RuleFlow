@@ -48,7 +48,9 @@ class Model:
     on_load: Signal = Signal()
     on_save: Signal = Signal()
 
-    def __init__(self, name: str, project_path: Path) -> None:
+    def __init__(self, name: str, project_path: Path, app: TextualApp) -> None:
+        """Name and project path are passed to initiate the model. The textual app is simply passed as a reference so
+        that plugins maintain access to it."""
         # ======== Basic Project Config ========
         self.project_name: str = name  # name the user has given the project
         self.project_path: Path = project_path
@@ -57,10 +59,12 @@ class Model:
         self.plugins: list[Plugin] = []
 
         # add builtin plugins
-        from studio.stdplgns import analysis, output, run
-        for module in (analysis, output, run):
+        from studio.stdplgns import run, output, analysis
+        for module in (run, output, analysis):
             for _, obj in inspect.getmembers(module):
                 if isinstance(obj, Plugin):
+                    obj.model = self
+                    obj.app = app
                     self.plugins.append(obj)
         # load all plugins
         for pp in (self.project_path / "plugins").glob("*.py"):
@@ -73,6 +77,8 @@ class Model:
             # Look for instances of Plugin inside the module
             for _, obj in inspect.getmembers(module):
                 if isinstance(obj, Plugin):
+                    obj.model = self
+                    obj.app = app
                     self.plugins.append(obj)
 
         # ======== Active Flows ========
@@ -124,12 +130,12 @@ class Plugin(ABC):
 
     Required attributes:
     - name: str  # the name of the plugin
-    - refreshable: bool  # if the panel and controls should be called again due to a change in widget objects
-                           (only used by the app screen to determine whether to rerender this plugin)
+    - model: Model  # gives the plugin access to the model
+    - app: TextualApp  # gives the plugin access to the app
     """
 
     @abstractmethod
-    def __init__(self, model: Model, app: TextualApp) -> None:
+    def __init__(self) -> None:
         pass
 
     @abstractmethod
@@ -138,11 +144,10 @@ class Plugin(ABC):
         return None
 
     @abstractmethod
-    def controls(self) -> tuple[str, list[Collapsible]] | None:
+    def controls(self) -> list[Collapsible]:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
-        return None
+        return []
 
-    @abstractmethod
     def save_configuration(self):
         """Optional method to implement that is called by the editor when exiting."""
         pass

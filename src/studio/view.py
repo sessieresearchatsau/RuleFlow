@@ -192,7 +192,8 @@ class WelcomeScreen(Screen):
         if i:=_.highlighted_option:
             self.app.MODEL = model.Model(  # create an instance of model side of the MVC design
                 i.id,  # we use id as the field to store the name of the project
-                config.RecentProjects.get_path(i.id)
+                config.RecentProjects.get_path(i.id),
+                self.app
             )
             self.app.push_screen("editor")
         else:
@@ -225,7 +226,7 @@ class EditorScreen(Screen):
     ]
 
     def __refresh_flow_selector__(self) -> None:
-        """Call to refresh the flow selector"""
+        """Call to refresh the flow selector."""
         # load flows
         m: model.Model = self.app.MODEL
         ol: Select = self.query_one("#select-flow")
@@ -235,12 +236,8 @@ class EditorScreen(Screen):
             ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
         except: pass
 
-    def __refresh_plugin_components__(self) -> None:
-        pass
-
     def on_mount(self) -> None:
         self.__refresh_flow_selector__()
-        self.__refresh_plugin_components__()
 
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
@@ -248,6 +245,7 @@ class EditorScreen(Screen):
             yield Label(f"⭘ {self.app.MODEL.project_name}", id="project-title-label", classes="pane-header")
             yield DirectoryTree(self.app.MODEL.project_path, id="project-dir-tree")
             yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
+            # TODO: add file buttons (creation, rename, etc.)
 
         # --- MIDDLE COLUMN: Workspace ---
         with Vertical(id="workspace"):
@@ -277,14 +275,19 @@ class EditorScreen(Screen):
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
                 # loop through the plugin TabPanes and yield them here
-                pass
+                for plugin in self.app.MODEL.plugins:
+                    if _:=plugin.panel():
+                        yield _
 
         # --- RIGHT COLUMN: Plugin Control Menu ---
         with Vertical(id="plugin-controls"):
-            yield Label("⭘ Run Settings", classes="pane-header", id="plugin-controls-header")
+            yield Label("", classes="pane-header", id="plugin-controls-header")
             with ContentSwitcher(id="sidebar-switcher"):
                 # loop through the collapsable's that the plugin provides, and place in Vertical containers.
-                pass
+                for plugin in self.app.MODEL.plugins:
+                    with Vertical(id=plugin.name):
+                        for c in plugin.controls():
+                            yield c
 
         # --- Footer ---
         yield Footer()
@@ -399,7 +402,10 @@ class EditorScreen(Screen):
     # ==== Panel and Controls ====
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
         """Dynamically switches the Right Sidebar content AND Title."""
-        pass
+        # TODO: make the ContentSwitcher properly assign the right ID...
+        # container: ContentSwitcher = self.query_one('#sidebar-switcher')
+        # container.current = event.pane.id
+        self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
 
     # ==== File Manager ====
     @on(Button.Pressed, '#btn_refresh_project_dir')
