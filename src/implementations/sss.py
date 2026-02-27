@@ -36,13 +36,15 @@ class ReplacementRule(RuleABC):
 
 class SSS(Flow):
     def __init__(self, rule_set: list[str], initial_space: str):
-        super().__init__(RuleSet([ReplacementRule(s) for s in rule_set]), [SpaceState([Cell(s) for s in initial_space])])
+        super().__init__()
+        self.set_initial_space([SpaceState([Cell(s) for s in initial_space])])
+        self.set_ruleset(RuleSet([ReplacementRule(s) for s in rule_set]))
 
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(15)
-    sss.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(sss)
-    g.save_to_gephi_file('./graph.gexf')
+    sss.evolve_n(20)
+    print(sss)
+    # from core.graph import CausalGraph
+    # g = CausalGraph(sss)
+    # g.save_to_gephi_file('./graph.gexf')

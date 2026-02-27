@@ -1,0 +1,4 @@
+@import(ca.fp);
+@init(20 * "A" + "B" + "A" * 20,   4 * "AB");
+
+AA -> sad;
