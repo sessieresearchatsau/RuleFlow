@@ -24,20 +24,25 @@ class Flow:
     """
     Represents
     """
-    def __init__(self):
-        self.flow: FlowLangBase = FlowLang()
-        self.src: str = ""
-
-        # metadata
+    def __init__(self) -> None:
+        # Metadata
         self.name: str = ""
-        self.file_path: Path = Path()
-        self.is_dirty: bool = False
+        self.file_path: Path | None = None
 
-    def save_file(self):
-        pass
+        # Flow State
+        self.flow: FlowLangBase = FlowLang()
 
-    def open_file(self):
-        pass
+    def write_file(self, text: str) -> None:
+        if self.file_path:
+            self.file_path.write_text(text)
+
+    def read_file(self) -> str | None:
+        if self.file_path:
+            return self.file_path.read_text()
+        return None
+
+    def open_file(self, path: Path | None):
+        self.file_path = path
 
 
 class Model:

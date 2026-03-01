@@ -1,9 +1,13 @@
 """View/Controller side of the MVC paradigm
 
+LongTermTODO:
+- Make each flow session have its own text editor.
+
 Policies:
 - For software design reasons, it is best to make the user-flow from welcome screen to editor irreversible for the
 current process so that we don't have to introspectively modify state if the user selects a different project.
-This decision was made due to the ease of plugin implementation and project saving.
+This decision was made due to the ease of plugin implementation and project saving. At some point, however, we may
+prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
 from typing import cast, Iterable
@@ -39,7 +43,7 @@ class Spacer(Static):
 class DirectoryTree(_DT):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         for path in paths:
-            if str(path).endswith("__") or str(path).startswith("__"):
+            if str(path.stem) == 'plugins' or str(path).endswith("__") or str(path).startswith("__"):
                 continue
             if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
                 yield path
@@ -266,7 +270,7 @@ class EditorScreen(Screen):
 
             # Code Editor
             yield (_:=TextArea.code_editor(
-                text="// Select a .flow file to begin...",
+                text="",
                 id="code-editor",
                 disabled=True
             ))
@@ -286,7 +290,6 @@ class EditorScreen(Screen):
                 # loop through the collapsable's that the plugin provides, and place in Vertical containers.
                 for i, plugin in enumerate(self.app.MODEL.plugins):
                     with Vertical(id=f'tab-{i+1}'):
-                        yield Label(f"#tab-{i+1}")  # TODO temp test code
                         for c in plugin.controls():
                             yield c
 
@@ -385,8 +388,14 @@ class EditorScreen(Screen):
 
     @on(Select.Changed, '#select-flow')
     def select_flow(self, event: Select.Changed):
+        self.action_save_file()
+        m: model.Model = self.app.MODEL
         if isinstance(event.value, int):
-            self.app.MODEL.active_flow = self.app.MODEL.flows[event.value]
+            m.active_flow = m.flows[event.value]
+            self.set_code_editor_text(m.active_flow.read_file())
+        else:
+            m.active_flow = None
+            self.set_code_editor_text(None)
 
     @on(Button.Pressed, "#btn-clear")
     def btn_clear(self):
@@ -403,17 +412,50 @@ class EditorScreen(Screen):
     # ==== Panel and Controls ====
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
         """Dynamically switches the Right Sidebar content AND Title."""
-        # TODO: make the ContentSwitcher properly assign the right ID...
         container: ContentSwitcher = self.query_one('#sidebar-switcher')
         container.current = event.pane.id
         # noinspection PyProtectedMember
         self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
 
     # ==== File Manager ====
+    def get_code_editor_text(self) -> str:
+        return self.query_one("#code-editor").text
+
+    def set_code_editor_text(self, text: str | None) -> None:
+        ce: TextArea = self.query_one("#code-editor")
+        if text is None:
+            ce.load_text("")  # clears everything including history
+            ce.disabled = True
+            ce.placeholder = "// Select a .flow file to begin..."
+            return
+        if ce.disabled: ce.disabled = False
+        ce.text = text
+        ce.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
+        m: model.Model = self.app.MODEL
+        if not m.active_flow:
+            self.notify("A flow session must be selected first!", severity="warning")
+            return
+        if not event.path.exists():
+            self.notify("That file no longer exists!", severity="error")
+            self.query_one(DirectoryTree).reload()
+            return
+        m.active_flow.open_file(event.path)
+        self.set_code_editor_text(m.active_flow.read_file())
+
+    def action_save_file(self):
+        m: model.Model = self.app.MODEL
+        f: model.Flow = m.active_flow
+        if f is None:
+            return
+        if f.file_path:
+            f.write_file(self.get_code_editor_text())
+            self.notify(f"Saved the \"{f.file_path.name}\" file.")
+
     @on(Button.Pressed, '#btn_refresh_project_dir')
     def btn_refresh_project_dir(self):
-        dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
-        dir_tree.reload()
+        self.query_one(DirectoryTree).reload()
         self.notify(f"Refreshed Project Directory...")
 
 
@@ -431,6 +473,8 @@ class Main(App):
             self.exit()
         def handle_modal_result(result: dict):
             if result["pressed_button"] == "Yes":
+                # noinspection PyUnresolvedReferences
+                self.screen.action_save_file()
                 if result["checkbox"]["save_config"]["value"]:
                     self.app.MODEL.plugins_save_configs()
                 self.exit()

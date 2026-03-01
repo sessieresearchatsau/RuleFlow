@@ -1,4 +1,5 @@
 from textual.widgets import Collapsible, TabPane
+from textual.containers import ScrollableContainer
 from textual.app import App
 from typing import Optional
 from studio.model import Plugin, Model
@@ -10,8 +11,13 @@ class P(Plugin):
         self.app: Optional[App] = None
 
     def panel(self) -> TabPane | None:
-        return TabPane(self.name.title())
+        return TabPane(
+            self.name.title(),
+            ScrollableContainer(
+                Collapsible(Collapsible(expanded_symbol="-", collapsed_symbol="+")),
+                Collapsible(), Collapsible())
+        )
 
     def controls(self) -> list[Collapsible]:
-        return []
+        return [Collapsible(title=self.name.title())]
 plugin = P()

@@ -171,8 +171,7 @@ EditorScreen {
     padding: 1 2;
 }
 
-/*The flow selector dropdown*/
-#select-flow {
+#select-flow {  /*The flow selector dropdown*/
     width: 10;
 }
 
