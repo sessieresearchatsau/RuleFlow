@@ -1,6 +1,6 @@
 from textual.widgets import Collapsible, TabPane
 from textual.app import App
-from typing import Optional
+from typing import Optional, Iterator
 from studio.model import Plugin, Model
 
 class P(Plugin):
@@ -12,6 +12,6 @@ class P(Plugin):
     def panel(self) -> TabPane | None:
         return TabPane(self.name.title())
 
-    def controls(self) -> list[Collapsible]:
-        return []
+    def controls(self) -> Iterator[Collapsible]:
+        return iter([])
 plugin = P()

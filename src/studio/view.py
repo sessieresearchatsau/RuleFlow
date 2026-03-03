@@ -11,12 +11,12 @@ This decision was made due to the ease of plugin implementation and project savi
 prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
-from typing import cast, Iterable
+from typing import cast, Iterable, Callable, Any
 from textual.app import App, ComposeResult
-from textual.containers import Container, Center, Horizontal, Vertical
+from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
-    DirectoryTree as _DT, TextArea, Button, Label,
+    DirectoryTree as _DT, TextArea as _TA, Button, Label,
     Select, TabbedContent, OptionList, Input,
     Footer, ContentSwitcher, Static, Checkbox
 )
@@ -48,6 +48,76 @@ class DirectoryTree(_DT):
                 continue
             if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
                 yield path
+
+
+class TextArea(_TA):
+    def load_text(self, text: str | None) -> None:
+        """Overrides the load_text method so that placeholders work properly..."""
+        # NOTE: edit history is cleared
+        if text is None:
+            super().load_text("")
+            self.disabled = True
+            self.placeholder = "// Select a .flow file to begin..."
+            return
+        if self.disabled: self.disabled = False
+        super().load_text(text)
+        self.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
+
+    def on_mount(self) -> None:
+        self._code_editor_changed_callback: Callable[[TextArea.Changed], Any] = lambda _: None
+
+    def connect_code_editor_change_callback(self, c: Callable[[TextArea.Changed], Any]):
+        self._code_editor_changed_callback = c
+
+    def on_text_area_changed(self, event: TextArea.Changed):
+        self._code_editor_changed_callback(event)
+
+
+# import re
+# class CustomHighlightTextArea(TextArea):
+#     # 1. Define your custom highlighting rules as (regex_pattern, highlight_name)
+#     # The 'highlight_name' should match standard names used in Textual themes
+#     # (e.g., "keyword", "string", "comment", "number", "variable", "function").
+#     HIGHLIGHT_RULES = [
+#         (r"\b(def|class|return|if|else|elif|import|from)\b", "keyword"),
+#         (r'".*?"|\'.*?\'', "string"),
+#         (r"#.*", "comment"),
+#         (r"\b\d+\b", "number"),
+#         (r"\b[A-Z][a-zA-Z0-9_]*\b", "type"),  # Class names
+#     ]
+#
+#     def on_mount(self) -> None:
+#         # Pre-compile the regexes for performance when the widget mounts
+#         self._compiled_rules = [
+#             (re.compile(pattern), name)
+#             for pattern, name in self.HIGHLIGHT_RULES
+#         ]
+#
+#     def _build_highlight_map(self) -> None:
+#         """Override to apply custom regex-based highlights instead of tree-sitter."""
+#
+#         # 1. Clear the existing line cache and highlight map
+#         self._line_cache.clear()
+#         self._highlights.clear()
+#
+#         # 2. Iterate over every line in the document
+#         for line_index in range(self.document.line_count):
+#             line_text = self.document[line_index]
+#
+#             # 3. Apply each regex rule to the current line
+#             for regex, highlight_name in self._compiled_rules:
+#                 for match in regex.finditer(line_text):
+#                     # 4. CRITICAL: Convert Python's character indices to byte offsets.
+#                     # Textual's `_render_line` expects byte offsets because that is
+#                     # what Tree-sitter natively outputs.
+#                     start_char, end_char = match.span()
+#                     start_byte = len(line_text[:start_char].encode("utf-8"))
+#                     end_byte = len(line_text[:end_char].encode("utf-8"))
+#
+#                     # 5. Append the highlight tuple for this line
+#                     self._highlights[line_index].append(
+#                         (start_byte, end_byte, highlight_name)
+#                     )
 
 
 class ModalDialog(ModalScreen[dict]):
@@ -289,7 +359,7 @@ class EditorScreen(Screen):
             with ContentSwitcher(id="sidebar-switcher"):
                 # loop through the collapsable's that the plugin provides, and place in Vertical containers.
                 for i, plugin in enumerate(self.app.MODEL.plugins):
-                    with Vertical(id=f'tab-{i+1}'):
+                    with ScrollableContainer(id=f'tab-{i+1}'):
                         for c in plugin.controls():
                             yield c
 
@@ -392,10 +462,10 @@ class EditorScreen(Screen):
         m: model.Model = self.app.MODEL
         if isinstance(event.value, int):
             m.active_flow = m.flows[event.value]
-            self.set_code_editor_text(m.active_flow.read_file())
+            self.get_code_editor_widget().text = m.active_flow.read_file()
         else:
             m.active_flow = None
-            self.set_code_editor_text(None)
+            self.get_code_editor_widget().text = None
 
     @on(Button.Pressed, "#btn-clear")
     def btn_clear(self):
@@ -409,6 +479,9 @@ class EditorScreen(Screen):
     def action_run(self):
         pass
 
+    def get_code_editor_widget(self) -> TextArea:
+        return self.query_one("#code-editor")
+
     # ==== Panel and Controls ====
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
         """Dynamically switches the Right Sidebar content AND Title."""
@@ -418,20 +491,6 @@ class EditorScreen(Screen):
         self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
 
     # ==== File Manager ====
-    def get_code_editor_text(self) -> str:
-        return self.query_one("#code-editor").text
-
-    def set_code_editor_text(self, text: str | None) -> None:
-        ce: TextArea = self.query_one("#code-editor")
-        if text is None:
-            ce.load_text("")  # clears everything including history
-            ce.disabled = True
-            ce.placeholder = "// Select a .flow file to begin..."
-            return
-        if ce.disabled: ce.disabled = False
-        ce.text = text
-        ce.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
-
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
         m: model.Model = self.app.MODEL
         if not m.active_flow:
@@ -443,14 +502,14 @@ class EditorScreen(Screen):
             return
         self.action_save_file()
         m.active_flow.open_file(event.path)
-        self.set_code_editor_text(m.active_flow.read_file())
+        self.get_code_editor_widget().text = m.active_flow.read_file()
 
     def action_save_file(self):
         m: model.Model = self.app.MODEL
         f: model.Flow = m.active_flow
         if f is None:
             return
-        if f.write_file(self.get_code_editor_text()):
+        if f.write_file(self.get_code_editor_widget().text):
             self.notify(f"Saved the \"{f.file_path.name}\" file.")
 
     @on(Button.Pressed, '#btn_refresh_project_dir')

@@ -1,9 +1,14 @@
-from textual.widgets import Collapsible, TabPane
+# Textual Imports
+from textual.widgets import Collapsible, TabPane, Input, Label, Switch
 from textual.widget import Widget
 from textual.containers import ScrollableContainer
 from textual.app import App
-from typing import Optional
+
+# Standard Imports
+from typing import Optional, Iterator
 from studio.model import Plugin, Model
+from studio.stdplgns.lib.widgets import Button
+
 
 class P(Plugin):
     def __init__(self) -> None:
@@ -19,6 +24,15 @@ class P(Plugin):
                 Collapsible(), Collapsible())
         )
 
-    def controls(self) -> list[Widget]:
-        return [Collapsible(title=self.name.title())]
+    def controls(self) -> Iterator[Widget]:
+        i = Input(type='number', compact=False, valid_empty=True)
+        i.border_title = 'Timeout (ms)'
+        b = Button("Test")
+        b.connect_pressed_callback(lambda: self.app.notify("TEST"))
+        with Collapsible(title='Hot Reload', collapsed=False):
+            yield Switch()
+            yield i
+            yield Label('Reload after changes:')
+            yield Input(type='integer', compact=True, valid_empty=True)
+            yield b
 plugin = P()

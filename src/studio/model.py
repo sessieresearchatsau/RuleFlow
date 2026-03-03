@@ -1,5 +1,5 @@
 """The model side of the MVC paradigm"""
-from typing import Optional
+from typing import Optional, Iterator
 from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane
@@ -151,9 +151,9 @@ class Plugin(ABC):
         return None
 
     @abstractmethod
-    def controls(self) -> list[Widget]:
+    def controls(self) -> Iterator[Widget]:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
-        return []
+        pass
 
     def save_configuration(self):
         """Optional method to implement that is called by the editor when exiting."""
