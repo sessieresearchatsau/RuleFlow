@@ -2,6 +2,11 @@
 
 The main reason for doing this is to provide easy access to events (through callbacks) of widgets for non-textual code.
 Of course, other useful widgets may be created here as needed for the standard plugin library.
+
+Best Development Policy:
+- Quickly provide widgets that work... no need to be perfectionistic.
+- Only after having working controls, then "prettify" them into well-styled/ordered widgets.
+    - Abstract those into specialized widgets here if deemed elegant.
 """
 
 # Textual Imports

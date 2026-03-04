@@ -333,10 +333,8 @@ class EditorScreen(Screen):
                 # yield Label("No Open File", classes='gray')
                 # yield Spacer()
                 yield Button("Run", id="btn-run", classes="action-btn green", compact=True)
-                yield Label("|", classes="separator")
-                yield Button("Debug", id="btn-debug", classes="action-btn orange", compact=True)
-                yield Label("|", classes="separator")
-                yield Button("Clear", id="btn-clear", classes="action-btn red", compact=True)
+                yield Label("| ", classes="gray")
+                yield Button("Stop", id="btn-stop", classes="action-btn orange", compact=True)
 
             # Code Editor
             yield (_:=TextArea.code_editor(
@@ -467,16 +465,12 @@ class EditorScreen(Screen):
             m.active_flow = None
             self.get_code_editor_widget().text = None
 
-    @on(Button.Pressed, "#btn-clear")
-    def btn_clear(self):
-        pass
-
-    @on(Button.Pressed, "#btn-debug")
-    def btn_debug(self):
-        pass
-
     @on(Button.Pressed, "#btn-run")
     def action_run(self):
+        pass
+
+    @on(Button.Pressed, "#btn-stop")
+    def btn_stop(self):
         pass
 
     def get_code_editor_widget(self) -> TextArea:
@@ -559,6 +553,5 @@ class Main(App):
 
 
 if __name__ == "__main__":
-    import textual.events
     app = Main()
     app.run()
