@@ -1,11 +1,9 @@
 """The model side of the MVC paradigm"""
-from typing import Optional, Iterator
+from typing import Optional, Iterator, TYPE_CHECKING, cast
 from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane
 from textual.widget import Widget
-from textual.app import App as TextualApp
-from core.signals import Signal
 from copy import deepcopy
 
 # used for dynamic imports and path management
@@ -14,6 +12,12 @@ import importlib.util
 import inspect
 import sys
 import importlib
+
+# used for type checking
+if TYPE_CHECKING:
+    from studio.view import EditorScreen
+else:
+    class EditorScreen(object): pass  # must define due to reference in type casting
 
 
 class Flow:
@@ -52,15 +56,16 @@ class Model:
     The source of truth for the application state (a Singleton Pattern).
     Manages the current workspace and open file flows.
     """
-    on_load: Signal = Signal()
-    on_save: Signal = Signal()
 
-    def __init__(self, name: str, project_path: Path, app: TextualApp) -> None:
+    def __init__(self, name: str, project_path: Path, view: EditorScreen) -> None:
         """Name and project path are passed to initiate the model. The textual app is simply passed as a reference so
         that plugins maintain access to it."""
         # ======== Basic Project Config ========
         self.project_name: str = name  # name the user has given the project
         self.project_path: Path = project_path
+
+        # ======== View Hook ========
+        self.view: EditorScreen = view
 
         # ======== Plugins ========
         self.plugins: list[Plugin] = []
@@ -70,8 +75,8 @@ class Model:
         for module in (run, output, analysis):
             for _, obj in inspect.getmembers(module):
                 if isinstance(obj, Plugin):
-                    obj.model = self
-                    obj.app = app
+                    obj._model = self
+                    obj._view = self.view
                     self.plugins.append(obj)
         # load all plugins
         for pp in (self.project_path / "plugins").glob("*.py"):
@@ -84,9 +89,11 @@ class Model:
             # Look for instances of Plugin inside the module
             for _, obj in inspect.getmembers(module):
                 if isinstance(obj, Plugin):
-                    obj.model = self
-                    obj.app = app
+                    obj._model = self
+                    obj._view = self.view
                     self.plugins.append(obj)
+        for p in self.plugins:
+            p.on_initialized()
 
         # ======== Active Flows ========
         self.flows: list[Flow] = []
@@ -122,13 +129,8 @@ class Model:
         else:
             self.active_flow = None
 
-    def plugins_save_configs(self):
-        """Direct all plugins to save configuration of the plugin."""
-        for p in self.plugins:
-            p.save_configuration()
 
-
-# ================ Client Implemented  ================
+# ================ Plugin Support ================
 class Plugin(ABC):
     """
     Any class that inherits from this, becomes a plugin and is expected to implement the methods below.
@@ -138,11 +140,26 @@ class Plugin(ABC):
     Required attributes:
     - name: str  # the name of the plugin
     - model: Model  # gives the plugin access to the model
-    - app: TextualApp  # gives the plugin access to the app
+    - view: EditorScreen  # gives the plugin access to the app
     """
 
-    @abstractmethod
     def __init__(self) -> None:
+        # Define the unset required attributes
+        self.name: str = cast(str, cast(object, None))
+        self._model: Model = cast(Model, cast(object, None))
+        self._view: EditorScreen = cast(EditorScreen, cast(object, None))
+
+    @property
+    def model(self) -> Model:
+        return self._model
+
+    @property
+    def view(self) -> EditorScreen:
+        return self._view
+
+    @abstractmethod
+    def on_initialized(self) -> None:
+        """Called when the plugin is fully loaded by the model."""
         pass
 
     @abstractmethod
@@ -153,8 +170,4 @@ class Plugin(ABC):
     @abstractmethod
     def controls(self) -> Iterator[Widget]:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
-        pass
-
-    def save_configuration(self):
-        """Optional method to implement that is called by the editor when exiting."""
         pass

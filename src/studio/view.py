@@ -11,7 +11,7 @@ This decision was made due to the ease of plugin implementation and project savi
 prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
-from typing import cast, Iterable, Callable, Any
+from typing import cast, Iterable
 from textual.app import App, ComposeResult
 from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
 from textual.screen import Screen, ModalScreen
@@ -24,6 +24,7 @@ from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
 from studio import config
 from studio import model
+from core.signals import Signal  # we don't use Textual builtin signal system due to limitation with widget mounting being required first.
 
 
 LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
@@ -62,15 +63,6 @@ class TextArea(_TA):
         if self.disabled: self.disabled = False
         super().load_text(text)
         self.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
-
-    def on_mount(self) -> None:
-        self._code_editor_changed_callback: Callable[[TextArea.Changed], Any] = lambda _: None
-
-    def connect_code_editor_change_callback(self, c: Callable[[TextArea.Changed], Any]):
-        self._code_editor_changed_callback = c
-
-    def on_text_area_changed(self, event: TextArea.Changed):
-        self._code_editor_changed_callback(event)
 
 
 # import re
@@ -268,7 +260,7 @@ class WelcomeScreen(Screen):
             self.app.MODEL = model.Model(  # create an instance of model side of the MVC design
                 i.id,  # we use id as the field to store the name of the project
                 config.RecentProjects.get_path(i.id),
-                self.app
+                self.app.editor_screen
             )
             self.app.push_screen("editor")
         else:
@@ -300,6 +292,21 @@ class EditorScreen(Screen):
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
     ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # ==== Signals ====
+        self.sig_button_pressed: Signal[Button.Pressed] = Signal()
+        self.sig_save_config_directive: Signal = Signal()
+
+    @on(Button.Pressed)
+    def _emit_button_signals(self, event: Button.Pressed) -> None:
+        """Handle emitting the button pressed signal"""
+        self.sig_button_pressed.emit(event)
+
+    def on_mount(self) -> None:
+        self.__refresh_flow_selector__()
+
     def __refresh_flow_selector__(self) -> None:
         """Call to refresh the flow selector."""
         # load flows
@@ -310,9 +317,6 @@ class EditorScreen(Screen):
             # noinspection PyProtectedMember
             ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
         except: pass
-
-    def on_mount(self) -> None:
-        self.__refresh_flow_selector__()
 
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
@@ -335,13 +339,16 @@ class EditorScreen(Screen):
                 yield Button("Run", id="btn-run", classes="action-btn green", compact=True)
                 yield Label("| ", classes="gray")
                 yield Button("Stop", id="btn-stop", classes="action-btn orange", compact=True)
+                yield Label("| ", classes="gray")
+                yield Button("Clear", id="btn-clear", classes="action-btn red", compact=True)
 
             # Code Editor
-            yield (_:=TextArea.code_editor(
+            self.code_editor_text_area: TextArea = TextArea.code_editor(
                 text="",
                 id="code-editor",
                 disabled=True
-            ))
+            )
+            yield self.code_editor_text_area
             # _.register_language()
 
             # Plugin Panel
@@ -460,21 +467,10 @@ class EditorScreen(Screen):
         m: model.Model = self.app.MODEL
         if isinstance(event.value, int):
             m.active_flow = m.flows[event.value]
-            self.get_code_editor_widget().text = m.active_flow.read_file()
+            self.code_editor_text_area.text = m.active_flow.read_file()
         else:
             m.active_flow = None
-            self.get_code_editor_widget().text = None
-
-    @on(Button.Pressed, "#btn-run")
-    def action_run(self):
-        pass
-
-    @on(Button.Pressed, "#btn-stop")
-    def btn_stop(self):
-        pass
-
-    def get_code_editor_widget(self) -> TextArea:
-        return self.query_one("#code-editor")
+            self.code_editor_text_area.text = None
 
     # ==== Panel and Controls ====
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
@@ -496,14 +492,14 @@ class EditorScreen(Screen):
             return
         self.action_save_file()
         m.active_flow.open_file(event.path)
-        self.get_code_editor_widget().text = m.active_flow.read_file()
+        self.code_editor_text_area.text = m.active_flow.read_file()
 
     def action_save_file(self):
         m: model.Model = self.app.MODEL
         f: model.Flow = m.active_flow
         if f is None:
             return
-        if f.write_file(self.get_code_editor_widget().text):
+        if f.write_file(self.code_editor_text_area.text):
             self.notify(f"Saved the \"{f.file_path.name}\" file.")
 
     @on(Button.Pressed, '#btn_refresh_project_dir')
@@ -514,6 +510,10 @@ class EditorScreen(Screen):
 
 class Main(App):
     CSS_PATH = "styles.tcss"
+
+    @property
+    def editor_screen(self) -> EditorScreen:
+        return cast(EditorScreen, self.get_screen('editor'))
 
     def on_mount(self):
         # create the screens and push the welcome page
@@ -529,7 +529,7 @@ class Main(App):
                 # noinspection PyUnresolvedReferences
                 self.screen.action_save_file()
                 if result["checkbox"]["save_config"]["value"]:
-                    self.app.MODEL.plugins_save_configs()
+                    self.editor_screen.sig_save_config_directive.emit()
                 self.exit()
         # Push the screen with the configuration and callback
         self.app.push_screen(

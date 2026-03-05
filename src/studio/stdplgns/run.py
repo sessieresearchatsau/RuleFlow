@@ -1,19 +1,17 @@
 # Textual Imports
-from textual.widgets import Collapsible, TabPane, Input, Checkbox
+from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button
 from textual.widget import Widget
 from textual.containers import ScrollableContainer
-from textual.app import App
 
 # Standard Imports
-from typing import Optional, Iterator
-from studio.model import Plugin, Model
-from studio.stdplgns.lib.widgets import Button
+from typing import Iterator
+from studio.model import Plugin
+
 
 class P(Plugin):
-    def __init__(self) -> None:
-        self.name: str = 'run'
-        self.model: Optional[Model] = None
-        self.app: Optional[App] = None
+    def on_initialized(self) -> None:
+        self.name = 'run'
+        self.view.sig_button_pressed.connect(self._handle_b)
 
     def panel(self) -> TabPane | None:
         # TODO: connect up the controls and the Flow backend......
@@ -21,11 +19,20 @@ class P(Plugin):
             self.name.title(),
             ScrollableContainer(
                 Collapsible(Collapsible(expanded_symbol='-', collapsed_symbol='+')),
-                Collapsible(), Collapsible())
+                Collapsible(), Collapsible()
+            )
         )
+
+    def _handle_b(self, e: Button.Pressed):
+        if e.control.id == 'test':
+            self.view.notify('Test Pressed')
 
     def controls(self) -> Iterator[Widget]:
         # NOTE: there aren't that many settings for the run tab due to most controls being available through the DSL.
+        self.test = Button('Test', id='test')
+
+        yield self.test
+
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable Hot Reload Mode')
             yield self.hot_mode
@@ -41,5 +48,4 @@ class P(Plugin):
             yield self.enable_progress_bar
             self.enable_program_stats = Checkbox('Resource usage stats')
             yield self.enable_program_stats
-
 plugin = P()

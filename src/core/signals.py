@@ -1,7 +1,8 @@
-from typing import Callable, Hashable, Any
+from typing import Callable, Hashable, Any, TypeVar, Generic
+SignalT = TypeVar("SignalT")
 
 
-class Signal:
+class Signal(Generic[SignalT]):
     """Implements a QT-like signal system with instance-specific filtering.
 
     Please note that any connected functions will KEEP result in them staying alive in memory until disconnected (so make sure to disconnect any methods before deleting and object).
@@ -50,3 +51,6 @@ class Signal:
                 self.callables.remove(func)
         except (ValueError, KeyError):
             pass
+
+if __name__ == "__main__":
+    s: Signal[int] = Signal()

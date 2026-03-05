@@ -11,7 +11,6 @@ from rich.table import Table
 from rich.text import Text
 from rich.live import Live
 from rich import box
-from rich.color import Color
 
 # Handle import based on your structure
 from src.core.engine import Flow, Event, Cell
