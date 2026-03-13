@@ -92,8 +92,6 @@ class Model:
                     obj._model = self
                     obj._view = self.view
                     self.plugins.append(obj)
-        for p in self.plugins:
-            p.on_initialized()
 
         # ======== Active Flows ========
         self.flows: list[Flow] = []
@@ -103,6 +101,10 @@ class Model:
         self.flows.append(_:=Flow())
         _.name = "Root"
         self.active_flow = _
+
+        # ======== Initialize any children models (plugins) ========
+        for p in self.plugins:
+            p.on_initialized()
 
     def get_flow_options(self) -> list[str]:
         """
@@ -163,11 +165,11 @@ class Plugin(ABC):
         pass
 
     @abstractmethod
-    def panel(self) -> TabPane | None:
-        """Returns the widget to be displayed in the panel for this plugin."""
-        return None
-
-    @abstractmethod
     def controls(self) -> Iterator[Widget]:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
         pass
+
+    @abstractmethod
+    def panel(self) -> TabPane | None:
+        """Returns the widget to be displayed in the panel for this plugin."""
+        return None

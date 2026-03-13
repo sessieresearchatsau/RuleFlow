@@ -122,18 +122,17 @@ def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, An
     return returns
 
 
-# TODO: decouple the self.events from the compilation phase so that rulesets can be changed without affecting the current evolution!!!
 class FlowLangBase(Flow):
     """The general API of the Flow object used in all language implementations."""
-
-    def interpret(self, s: str) -> None:
-        """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
-        raise NotImplementedError()
 
     def interpret_file(self, path: str) -> None:
         """opens `.flow` files and constructs a FlowLang object."""
         with open(path, 'r') as f:
             return self.interpret(f.read())
+
+    def interpret(self, s: str) -> None:
+        """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
+        raise NotImplementedError()
 
 
 class FlowLang(FlowLangBase):
@@ -171,10 +170,17 @@ class FlowLang(FlowLangBase):
 
         # after instantiation
         interpret_directives({
-            'evolve': self.evolve_n,
+            'evolve': self.evolve,
+            'undo': self.undo,
             'merge': self.__merge_group,
             'compress': self.__compress_group
         }, self.ast['directives'])
+
+    def undo(self, n_steps: int) -> None:
+        super().undo(n_steps)
+        for space in self.current_event.spaces:  # we must remember to refresh the buffer if undoing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
 
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
@@ -216,7 +222,6 @@ if __name__ == "__main__":
     import gc
     import timeit
 
-
     def get_mem():
         """Returns current resident set size in MB."""
         process = psutil.Process(os.getpid())
@@ -238,7 +243,7 @@ if __name__ == "__main__":
     // A -> ACB;
     """
     flow = FlowLang(code)
-    time = timeit.timeit(lambda: flow.evolve_n(18), number=1)
+    time = timeit.timeit(lambda: flow.evolve(18), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")

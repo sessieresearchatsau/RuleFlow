@@ -29,7 +29,7 @@ if __name__ == "__main__":
     // A -> ACB;
     """
     flow = FlowLang(code)
-    time = timeit.timeit(lambda: flow.evolve_n(18), number=1)
+    time = timeit.timeit(lambda: flow.evolve(18), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")

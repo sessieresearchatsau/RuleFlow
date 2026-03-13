@@ -195,6 +195,9 @@ Input:focus {
     background-tint: #252526;
 }
 
+RichLog {
+    overflow: auto;
+}
 
 /* =========================================
    COMPONENT CLASSES

@@ -1,56 +1,51 @@
-from typing import Callable, Hashable, Any, TypeVar, Generic
+from typing import Callable, Any, TypeVar, Generic
+from inspect import signature
+
 SignalT = TypeVar("SignalT")
 
-
 class Signal(Generic[SignalT]):
-    """Implements a QT-like signal system with instance-specific filtering.
+    """Implements a QT-like signal system for interactive programming.
 
-    Please note that any connected functions will KEEP result in them staying alive in memory until disconnected (so make sure to disconnect any methods before deleting and object).
+    For convenience, the emitter does not force the connected callable to take all the arguments that are emitted.
+    Thus, even if the emitter includes 2 arguments, but the callee only expects 1 or 0, the *args will be truncated.
+    If, however, there are more than the expected number of arguments, an error will occur as expected.
+
+    Please note that any connected functions/methods will result in them (or their objects because methods are bound
+    and thus ephemeral) staying ALIVE in memory until disconnected, so make sure to disconnect any methods before
+    deleting an object.
+
+    If you want to implement signals globally, define them on the class space. Conversely, if you want signals to
+    be tied to a certain classes instances, define them as attributes. It may be useful to do both, hence you would
+    prefix or suffix the signal names when defining them in both the instance and class spaces. Alternatively, you
+    could also pass `self` when emitting and let the client decide what to do based on that.
     """
-    __slots__ = ('callables', 'restricted_callables')
+    __slots__ = ('callables',)
 
     def __init__(self) -> None:
-        self.callables: list[Callable] = []
-        # Maps a specific instance to a list of callbacks intended only for it (the caller must pass the hashable as args[0])
-        self.restricted_callables: dict[Hashable, list[Callable]] = {}
+        self.callables: list[tuple[Callable, int]] = []
 
     @property
     def callables_count(self) -> int:
-        return len(self.callables) + sum(len(v) for v in self.restricted_callables.values())
+        return len(self.callables)
 
     def emit(self, *args: Any, **kwargs: Any) -> None:
-        # Standard global callbacks
-        for c in self.callables:
-            c(*args, **kwargs)
+        for c, arg_len in self.callables:
+            c(*args[:arg_len], **kwargs)
 
-        # Instance-restricted callbacks
-        try:
-            for c in self.restricted_callables[args[0]]:
-                c(*args, **kwargs)
-        except (TypeError,  # in the event that args[0] is not hashable... must use try-catch due to fake hash being detected on certain objects (like RuleMatch) that contain un-hashables.
-                KeyError,  # if the args[0] does not exist in the dictionary
-                IndexError):  # if the index 0 does not exist in args.
-            pass
+    def connect(self, c: Callable) -> None:
+        if c not in self.callables:
+            self.callables.append((c, len(signature(c).parameters)))
 
-    def connect(self, func: Callable, restrict_to_instance: Hashable = None) -> None:
-        if restrict_to_instance is not None:
-            callbacks = self.restricted_callables.setdefault(restrict_to_instance, [])
-            if func not in callbacks:
-                callbacks.append(func)
-        else:
-            if func not in self.callables:
-                self.callables.append(func)
+    def disconnect(self, c: Callable) -> None:
+        matches: list[int] = [i for i, (c_, _) in enumerate(self.callables) if c_ is c]
+        for i in reversed(matches):
+            self.callables.pop(i)
 
-    def disconnect(self, func: Callable, restrict_to_instance: Hashable = None) -> None:
-        try:
-            if restrict_to_instance is not None:
-                self.restricted_callables[restrict_to_instance].remove(func)
-                if not self.restricted_callables[restrict_to_instance]:
-                    del self.restricted_callables[restrict_to_instance]
-            else:
-                self.callables.remove(func)
-        except (ValueError, KeyError):
-            pass
 
 if __name__ == "__main__":
-    s: Signal[int] = Signal()
+    t: Signal = Signal()
+    f1 = lambda a: print(a)
+    f2 = lambda a, b: print(a, b)
+    t.connect(f1)
+    t.connect(f2)
+    t.emit("yup", 'test')

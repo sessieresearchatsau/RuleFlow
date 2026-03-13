@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
     # 1. Run your simulation
     system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='A')
-    system.evolve_n(10)
+    system.evolve(10)
 
     # 2. Visualize
     viz = FlowExplorerRich(system, block_mode=False)

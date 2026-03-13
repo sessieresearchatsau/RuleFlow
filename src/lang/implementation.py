@@ -3,7 +3,7 @@
 Policy:
 - Any multiways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
 become corrupt when branching (one state spawning two states). We have considered coding buffer branching logic...
-however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer.
+however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer (forgot why).
 In the future, we may consider making the search_buffer branch-able (really, it is already possible by manually using Vec.search_buffer.copy()).
 
 Future Considerations:
@@ -36,7 +36,7 @@ class Target(NamedTuple):
 class BaseRule(RuleABC):
     # ======== Signals ========
     # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
-    on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces is passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
+    on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces are passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
 
     # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
     on_execution: Signal = Signal()
@@ -105,7 +105,6 @@ class BaseRule(RuleABC):
         self.p_apply: int | None = None  # probability that a rule will apply() at all.
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
-
 
     def __repr__(self):
         return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {[t.target for t in self.target]})"

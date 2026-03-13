@@ -257,12 +257,12 @@ class WelcomeScreen(Screen):
     def btn_open_project(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
         if i:=_.highlighted_option:
-            self.app.MODEL = model.Model(  # create an instance of model side of the MVC design
-                i.id,  # we use id as the field to store the name of the project
-                config.RecentProjects.get_path(i.id),
-                self.app.editor_screen
+            self.dismiss(
+                {
+                    "project_name": i.id,
+                    "project_path": config.RecentProjects.get_path(i.id)
+                }
             )
-            self.app.push_screen("editor")
         else:
             self.notify('Please select a project to open!', severity='warning')
 
@@ -318,6 +318,10 @@ class EditorScreen(Screen):
             ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
         except: pass
 
+    def action_run(self):
+        """Action to press the run button upon this action..."""
+        self.query_one('#btn-run').press()
+
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
         with Vertical(id="project-directory"):
@@ -340,7 +344,7 @@ class EditorScreen(Screen):
                 yield Label("| ", classes="gray")
                 yield Button("Stop", id="btn-stop", classes="action-btn orange", compact=True)
                 yield Label("| ", classes="gray")
-                yield Button("Clear", id="btn-clear", classes="action-btn red", compact=True)
+                yield Button("Reset", id="btn-reset", classes="action-btn red", compact=True)
 
             # Code Editor
             self.code_editor_text_area: TextArea = TextArea.code_editor(
@@ -519,7 +523,14 @@ class Main(App):
         # create the screens and push the welcome page
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
-        self.push_screen("welcome")
+        def on_project_opened(result: dict):
+            self.MODEL = model.Model(
+                result["project_name"],
+                result["project_path"],
+                self.editor_screen
+            )
+            self.push_screen("editor")
+        self.push_screen("welcome", callback=on_project_opened)
 
     def action_quit(self):
         if not hasattr(self, "MODEL"):

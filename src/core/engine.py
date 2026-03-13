@@ -1,4 +1,4 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from copy import copy
@@ -391,19 +391,18 @@ class Event:
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedication printer
 
 
-# We use these noinspections because of stupid PyCharm bug regarding slots and dataclasses that has not been fixed...
-# noinspection PyDunderSlots,PyUnresolvedReferences
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     # Signals (can be used to live update analysis objects like the causal graph)
     on_evolve: Signal = Signal()
+    on_evolve_n: Signal = Signal()  # after all evolves
     on_undo: Signal = Signal()
+    on_undo_n: Signal = Signal()  # after all undo's
 
     def __init__(self):
         self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
-        self.event_index_offset: int = 0
 
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
@@ -411,10 +410,9 @@ class Flow:
 
     def set_initial_space(self, initial_space: Sequence[SpaceState]) -> None:
         """Used to set the initial space"""
-        self.events.insert(
-            0,
-            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be i as well so that next evolve() works.
-        )
+        if not self.events:
+            self.events.append(cast(Event, cast(object, 0)))
+        self.events[0] = Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be `i` as well so that next evolve() works.
         for i in initial_space:
             for cell in i.get_all_cells():
                 cell.created_at = 0
@@ -425,27 +423,13 @@ class Flow:
 
     @property
     def current_event(self) -> Event:
-        try:
-            return self.events[self.current_event_idx]
-        except IndexError:  # when the offset is too large or no events exist
-            if len(self.events) == 0:
-                raise IndexError('No events exist')
-            self.set_event_offset(0)  # fix offset
-            return self.current_event
+        return self.events[-1]
 
     @property
     def current_event_idx(self) -> int:
-        return len(self.events) - 1 - self.event_index_offset
+        return len(self.events) - 1
 
-    def set_event_offset(self, offset: int, from_init: bool = False) -> None:
-        """Shift the current index in the flow of events"""
-        if offset < 0:
-            raise ValueError('Offset cannot be negative')
-        if from_init:
-            offset = len(self.events) - 1 - offset
-        self.event_index_offset = offset
-
-    def evolve(self) -> None:
+    def _evolve(self) -> None:
         """ Evolve the system by one step.
 
         This can be reimplemented by subclasses to modify behavior. As it stands, it does the following:
@@ -476,22 +460,27 @@ class Flow:
                         cell.destroyed_at += (current_event_idx,)  # first one, of course, will be the main lineage
 
         # process causal distance to creation
-        min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
+        min_prev: int = min((self.events[e_idx].causal_distance_to_creation
+                             for e_idx in self.current_event.causally_connected_events),
+                            default=-1)
         self.current_event.causal_distance_to_creation = min_prev + 1
 
         # emit any signals
         self.on_evolve.emit(self)
 
-    def evolve_n(self, n_steps: int, break_when_inert: bool = False) -> None:
+    def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
         while n_steps > 0:
             # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
-            self.evolve()
+            self._evolve()
             n_steps -= 1
             if break_when_inert and self.current_event.inert:
                 break
 
-    def undo(self) -> None:
+        # emit any signals
+        self.on_undo_n.emit(self)
+
+    def _undo(self) -> None:
         """undo the last event..."""
         if self.current_event_idx == 0:
             return
@@ -500,17 +489,15 @@ class Flow:
                 for dc in sd.cell_deltas:
                     for cell in dc.destroyed_cells:
                         cell.destroyed_at = tuple(i for i in cell.destroyed_at if i != self.current_event_idx)
-                    if self.event_index_offset:  # shift the created_at up if we are in the middle of an evolution
-                        for cell in dc.new_cells:
-                            cell.created_at = current_event_idx + 1
-        self.events.pop(self.current_event_idx)
+        self.events.pop()
 
         # emit any signals
         self.on_undo.emit(self)
 
-    def undo_n(self, n_steps: int) -> None:
+    def undo(self, n_steps: int) -> None:
         for _ in range(n_steps):
-            self.undo()
+            self._undo()
+        self.on_undo_n.emit(self)
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)
