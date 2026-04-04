@@ -1,5 +1,5 @@
 """The model side of the MVC paradigm"""
-from typing import Optional, Iterator, TYPE_CHECKING, cast
+from typing import Optional, Iterator, TYPE_CHECKING, cast, Callable
 from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane
@@ -158,6 +158,11 @@ class Plugin(ABC):
     @property
     def view(self) -> EditorScreen:
         return self._view
+
+    @property
+    def cft(self) -> Callable:
+        """Used to call a textual method/function from another thread (for thread-safety)."""
+        return self._view.app.call_from_thread
 
     @abstractmethod
     def on_initialized(self) -> None:

@@ -1,9 +1,9 @@
-from typing import Callable, Any, TypeVar, Generic
+from typing import Callable, Any, TypeVar, Generic, ParamSpec
 from inspect import signature
 
-SignalT = TypeVar("SignalT")
+P = ParamSpec("P")
 
-class Signal(Generic[SignalT]):
+class Signal(Generic[P]):
     """Implements a QT-like signal system for interactive programming.
 
     For convenience, the emitter does not force the connected callable to take all the arguments that are emitted.
@@ -22,21 +22,21 @@ class Signal(Generic[SignalT]):
     __slots__ = ('callables',)
 
     def __init__(self) -> None:
-        self.callables: list[tuple[Callable, int]] = []
+        self.callables: list[tuple[Callable[P, Any], int]] = []
 
     @property
     def callables_count(self) -> int:
         return len(self.callables)
 
-    def emit(self, *args: Any, **kwargs: Any) -> None:
+    def emit(self, *args: P.args, **kwargs: P.kwargs) -> None:
         for c, arg_len in self.callables:
             c(*args[:arg_len], **kwargs)
 
-    def connect(self, c: Callable) -> None:
+    def connect(self, c: Callable[P, Any]) -> None:
         if c not in self.callables:
             self.callables.append((c, len(signature(c).parameters)))
 
-    def disconnect(self, c: Callable) -> None:
+    def disconnect(self, c: Callable[P, Any]) -> None:
         matches: list[int] = [i for i, (c_, _) in enumerate(self.callables) if c_ is c]
         for i in reversed(matches):
             self.callables.pop(i)

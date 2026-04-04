@@ -29,25 +29,28 @@ class P(Plugin):
         )
 
         # Connect flow signals to update progress bar
-        FlowLangBase.on_evolve.connect(self._handle_progress_updates)
-        FlowLangBase.on_undo.connect(self._handle_progress_updates)
+        FlowLangBase.on_evolved_step.connect(self._handle_progress_updates)
+        FlowLangBase.on_undone_step.connect(self._handle_progress_updates)
 
         # Attributes
         self._process = psutil.Process(os.getpid())
         self._prev_flowlang_src: str = ''  # for diff checking
         self._hot_after_n_changes: int = 0  # for fast reference
-        self._running_thread: Worker | None = None
+        self._running_thread: Worker | None = None  # for checking and managing the current thread
 
     def controls(self) -> Iterator[Widget]:
         # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
-        self.mem_profile = Checkbox('Show Memory Profile')
-        yield self.mem_profile
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable hot reload mode', id='hot-reload')
             yield self.hot_mode
             self.hot_after_n_changes = Input(type='integer', value='1', id='hot-after-change')
             self.hot_after_n_changes.border_title = 'After n changes'
             yield self.hot_after_n_changes
+        with Collapsible(title='Program Log', collapsed=False):
+            self.mem_profile = Checkbox('Show memory profile')
+            yield self.mem_profile
+            self.show_traceback = Checkbox('Show tracebacks')
+            yield self.show_traceback
 
         self.hot_reload_timer: Timer = self.view.set_interval(
             1, self._handle_hot_reload,
@@ -57,19 +60,20 @@ class P(Plugin):
     def panel(self) -> TabPane | None:
         # Progress Bar Widget
         self.progress_bar = ProgressBar(total=100, show_eta=True, id="run-progress-bar")
-        self.progress_container = Collapsible(self.progress_bar, title="Execution Progress", collapsed=False)
+        self.progress_container = Collapsible(
+            self.progress_bar,
+            title="Execution Progress",
+            collapsed=False
+        )
 
         # Standard Output Widget
         self.log_view = RichLog(id="run-log-view", highlight=True, markup=True, wrap=True)
-        clear_log = Button('Clear Log', id="clear-log")
-        self.show_traceback = Checkbox('Show Tracebacks')
         self.log_container = Collapsible(
             self.log_view,
-            Horizontal(
-                clear_log,
-                self.show_traceback
-            ),
-            title="Program Log", collapsed=False)
+            Button('Clear Log', id="clear-log"),
+            Label(),
+            title="Program Log", collapsed=False
+        )
 
         return TabPane(
             self.name.title(),
@@ -85,7 +89,7 @@ class P(Plugin):
             self.execute_run()
         elif btn == 'clear-log':
             self.log_view.clear()
-            self.log_view.write(f"[bold green]Cleared Log[/bold green]")
+            self.log_view.write(f"[bold green] --- Log Cleared --- [/bold green]")
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
         btn: str = e.checkbox.id
@@ -105,14 +109,12 @@ class P(Plugin):
     def _handle_hot_reload(self) -> None:
         # import time
         # self.log_view.write(time.time())  # for debugging timer
-        if self._running_thread and self._running_thread.is_running:  # do not hot-reload while thread is active
-            return
         if self._flow_src_diff_check() >= self._hot_after_n_changes:  # only hot-reload after n changes to src
             self._prev_flowlang_src = self.view.code_editor_text_area.text
             self.execute_run()
 
     def _handle_progress_updates(self, f: FlowLangBase) -> None:
-        self.view.app.call_from_thread(  # we must call from the main thread to be thread-safe according to docs
+        self.cft(  # we must call from the main thread to be thread-safe according to docs
             self.progress_bar.update,
             progress=f.n_step_progress * 100
         )
@@ -120,7 +122,7 @@ class P(Plugin):
         # time.sleep(0.5)
 
     def _execute(self) -> None:
-        # use self.view.app.call_from_thread to be thread-safe (according to docs on Workers)
+        # use self.cft to be thread-safe (according to docs on Workers)
         if self.mem_profile.value:
             mem_start = self._process.memory_info().rss / 1024 / 1024
             start_time = time.perf_counter()
@@ -131,12 +133,12 @@ class P(Plugin):
         except Exception as e:
             # Handle the exception
             if self.show_traceback.value:
-                self.view.app.call_from_thread(
+                self.cft(
                     self.log_view.write,
                     RichTraceback.from_exception(*sys.exc_info(), word_wrap=True)
                 )
             else:
-                self.view.app.call_from_thread(
+                self.cft(
                     self.log_view.write,
                     f"[bold red]Execution Error:[/bold red] {str(e)}"
                 )
@@ -148,7 +150,7 @@ class P(Plugin):
             elapsed_time = time.perf_counter() - start_time
             # noinspection PyUnboundLocalVariable
             mem_diff = mem_end - mem_start
-            self.view.app.call_from_thread(
+            self.cft(
                 self.log_view.write,
                 f"[bold]Time Spent:[/bold] {elapsed_time:.4f} seconds\n"
                 f"[bold]Memory Change:[/bold] {mem_diff:+.2f} MB\n"
@@ -160,6 +162,9 @@ class P(Plugin):
         active_flow = self.model.active_flow
         if not active_flow:
             self.log_view.write("[bold red]Studio Error:[/bold red] No active flow selected to run.")
+            return
+        if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
+            self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
             return
         self._running_thread = self.view.run_worker(
             self._execute,

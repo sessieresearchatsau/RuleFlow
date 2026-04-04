@@ -395,10 +395,10 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     # Signals (can be used to live update analysis objects like the causal graph)
-    on_evolve: Signal[Self] = Signal()
-    on_evolve_n: Signal[Self] = Signal()  # after all evolves
-    on_undo: Signal[Self] = Signal()
-    on_undo_n: Signal[Self] = Signal()  # after all undo's
+    on_evolved_step: Signal[Self] = Signal()
+    on_evolved_n: Signal[Self, int] = Signal()  # after all evolves
+    on_undone_step: Signal[Self] = Signal()
+    on_undone_n: Signal[Self, int] = Signal()  # after all undo's
     on_clear: Signal[Self] = Signal()
 
     def __init__(self):
@@ -406,7 +406,7 @@ class Flow:
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
 
         # progress tracking attributes
-        self.n_step_progress: float = 1  # percentage of steps run by some_method_n().
+        self.n_step_progress: float = 0  # percentage of steps run by some_method_n().
 
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
@@ -471,7 +471,7 @@ class Flow:
         self.current_event.causal_distance_to_creation = min_prev + 1
 
         # emit any signals
-        self.on_evolve.emit(self)
+        self.on_evolved_step.emit(self)
 
     def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
@@ -485,7 +485,7 @@ class Flow:
                 break
 
         # emit any signals
-        self.on_evolve_n.emit(self)
+        self.on_evolved_n.emit(self, n_steps)
 
     def _undo(self) -> None:
         """undo the last event..."""
@@ -499,14 +499,14 @@ class Flow:
         self.events.pop()
 
         # emit any signals
-        self.on_undo.emit(self)
+        self.on_undone_step.emit(self)
 
     def undo(self, n_steps: int) -> None:
         for _ in range(n_steps):
             self.n_step_progress = (_ + 1) / n_steps
             self._undo()
 
-        self.on_undo_n.emit(self)
+        self.on_undone_n.emit(self, n_steps)
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)
