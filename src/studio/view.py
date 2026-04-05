@@ -298,7 +298,7 @@ class EditorScreen(Screen):
         # ==== Signals ====
         self.sig_button_pressed: Signal[Button.Pressed] = Signal()
         self.sig_checkbox_changed: Signal[Checkbox.Changed] = Signal()
-        self.sig_input_changed: Signal[Input.Changed] = Signal()
+        self.sig_input_submit: Signal[Input.Changed] = Signal()
         self.sig_save_config_directive: Signal = Signal()
 
     @on(Button.Pressed)
@@ -311,10 +311,10 @@ class EditorScreen(Screen):
         """Handle emitting the checkbox changed signal"""
         self.sig_checkbox_changed.emit(event)
 
-    @on(Input.Changed)
-    def _emit_input_signals(self, event: Input.Changed) -> None:
+    @on(Input.Submitted)
+    def _emit_input_submit_signals(self, event: Input.Changed) -> None:
         """Handle emitting the input changed signal"""
-        self.sig_input_changed.emit(event)
+        self.sig_input_submit.emit(event)
 
     def on_mount(self) -> None:
         self.__refresh_flow_selector__()

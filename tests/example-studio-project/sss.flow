@@ -7,5 +7,5 @@ A -> ABA;
 
 // Evolve n times
 // @clear();
-// @undo(1);
-@evolve(100);
+// @undo(10);
+@evolve(10);

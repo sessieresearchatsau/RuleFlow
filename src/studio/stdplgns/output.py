@@ -8,7 +8,7 @@ from textual.widgets.selection_list import Selection
 
 # Standard Imports
 from typing import Iterator
-from studio.model import Plugin, FlowLang, FlowLangBase
+from studio.model import Plugin, FlowLangBase
 
 
 class P(Plugin):
@@ -64,10 +64,15 @@ class P(Plugin):
 
     def panel(self) -> TabPane | None:
         self.data_table = DataTable(id='data-table')
-        self.data_table.add_columns('Time')
-        self.data_table.add_columns('Distance')
-        self.data_table.add_columns('Connected')
-        self.data_table.add_columns('Evolution')
+        self.data_table.add_column('Time', key='time')
+        self.data_table.add_column('Distance', key='distance')
+        self.data_table.add_column('Connected', key='connected')
+        self.data_table.add_column('Evolution', key='evolution')
+
+        # col = self.data_table.get_column('connected')
+        # col = 0
+        # self.data_table.refresh()
+
         return TabPane(
             self.name.title(),
             self.data_table
@@ -75,31 +80,48 @@ class P(Plugin):
 
     def on_evolved(self, f: FlowLangBase, steps: int) -> None:
         cft = self.cft
+        add_row = self.data_table.add_row
         if self.data_table.row_count == 0:
             steps += 1  # to include the first space state
         for event in f.events[-steps:]:
             cft(  # we are potentially calling from thread, thus this.
-                self.data_table.add_row,
+                add_row,
                 event.time,
                 event.causal_distance_to_creation,
                 tuple(event.causally_connected_events),
                 str(event.spaces.__next__())
                 .replace('A', '[on blue3] A [/on blue3]')
                 .replace('B', '[on magenta] B [/on magenta]')
-                .replace('C', '[on yellow] C [/on yellow]')
+                .replace('C', '[on yellow] C [/on yellow]'),
+                key=str(event.time)
             )
+
+        # if after clearing, we need to update the column width... not that costly.
+        self._refresh_column_widths()
+
+        # if evolving 1 step, scroll to end
+        if steps == 1:
+            self.data_table.scroll_end(animate=False)
 
     def on_undo(self, f: FlowLangBase, steps: int) -> None:
         cft = self.cft
-        if (_:=self.data_table.row_count) < steps:
+        dt = self.data_table
+        if (_:=dt.row_count) < steps:
             steps = _
         for _ in range(steps):
-            cell_key: CellKey = self.data_table.coordinate_to_cell_key(
-                Coordinate(self.data_table.row_count - 1, 0)
-            )
-            cft(self.data_table.remove_row, cell_key.row_key)
+            cft(dt.remove_row, str(dt.row_count - 1))
+        self._refresh_column_widths()
 
     def on_clear(self):
         self.data_table.clear()
+
+    def _refresh_column_widths(self) -> None:
+        """Update the column widths as Textual does not currently do that for us when removing rows."""
+        dt = self.data_table
+        if 0 <= (rc:=(dt.row_count - 1)):
+            # noinspection PyProtectedMember
+            dt._update_column_widths(
+                {dt.coordinate_to_cell_key(Coordinate(rc, i)) for i in range(len(dt.columns))}
+            )
 
 plugin = P()
