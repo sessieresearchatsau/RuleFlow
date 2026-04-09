@@ -15,7 +15,7 @@ from studio.model import Plugin, FlowLangBase
 
 class P(Plugin):
     def on_initialized(self) -> None:
-        self.name = 'output'
+        self.name = 'explore'
 
         # attributes
         self._render_range: tuple[int, int] = (-100, INF)
@@ -37,7 +37,7 @@ class P(Plugin):
         self._columns_control_bitmap = [False for _ in range(len(self._columns_control_bitmap))]
 
     def controls(self) -> Iterator[Widget]:
-        self.render_range = Input(value='-100:', id='render-limit')
+        self.render_range = Input(value='-100:', placeholder='e.g. -10: or 3:10', id='render-limit')
         self.render_range.border_title = 'Render Range'
         yield self.render_range
 
@@ -56,7 +56,7 @@ class P(Plugin):
             self.space_columns_limit = Input(str(self._space_columns_limit), type='integer', id='space-columns-limit')
             self.space_columns_limit.border_title = 'Space Columns Limit'
             yield self.space_columns_limit
-            self.hidden_space_columns = Input(id='hidden-space-columns')
+            self.hidden_space_columns = Input(placeholder='e.g. 5, 10:15, 20', id='hidden-space-columns')
             self.hidden_space_columns.border_title = 'Hidden Space Columns'
             yield self.hidden_space_columns
 

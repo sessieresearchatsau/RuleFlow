@@ -71,8 +71,8 @@ class Model:
         self.plugins: list[Plugin] = []
 
         # add builtin plugins
-        from studio.stdplgns import run, output, analysis
-        for module in (run, output, analysis):
+        from studio.stdplgns import run, explore, analysis
+        for module in (run, explore, analysis):
             for _, obj in inspect.getmembers(module):
                 if isinstance(obj, Plugin):
                     obj._model = self

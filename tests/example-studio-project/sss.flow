@@ -6,6 +6,6 @@ ABA -> AAB;
 A -> ABA;
 
 // Evolve n times
-// @clear();
+//@clear();
 //@undo(5);
-@evolve(10);
+@evolve(1);

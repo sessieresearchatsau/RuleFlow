@@ -1,7 +1,7 @@
 """The implementation for 1D space that supports the language features.
 
 Policy:
-- Any multiways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
+- Any multi-ways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
 become corrupt when branching (one state spawning two states). We have considered coding buffer branching logic...
 however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer (forgot why).
 In the future, we may consider making the search_buffer branch-able (really, it is already possible by manually using Vec.search_buffer.copy()).
