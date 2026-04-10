@@ -246,6 +246,7 @@ class P(Plugin):
 • ----
 • ----
 • ----
+• ----
 """
 
     def _handle_mouse_over_data_table(self, coord: Coordinate | None, offset: int) -> None:
@@ -307,6 +308,7 @@ class P(Plugin):
 • Connected Events Set: {len(set(connected_events))}
 
 [bold]Cell #{offset} Info[/bold]
+• Quanta: {flow_cell.quanta}
 • Created at: {flow_cell.created_at}
 • Destroyed at: {cell_destroyed_at}
 • Lifespan: {lifespan}
@@ -320,7 +322,7 @@ class P(Plugin):
         flush_mode: bool = self._render_range[0] < 0 and is_infinity(self._render_range[1])
         render_limit: int = abs(self._render_range[0])  # only used when flush mode is true
         if flush_mode and steps >= render_limit:
-            cft(self._rebuild_rows, f)
+            cft(self._rebuild_rows)
         else:
             short_circuit: bool = False  # just a little optimization for large loops
             for event in f.events[-steps:]:
@@ -341,7 +343,7 @@ class P(Plugin):
             try: cft(dt.remove_row, str(old_rows_count - i - 1))
             except: pass
         if self._render_range[0] < 0 and is_infinity(self._render_range[1]):  # if flushing
-            cft(self._rebuild_rows, f)
+            cft(self._rebuild_rows)
         cft(self._refresh_column_widths)
 
     def on_clear(self):
