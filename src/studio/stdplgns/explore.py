@@ -241,6 +241,7 @@ class P(Plugin):
 • ----
 • ----
 • ----
+• ----
 
 [bold]Cell Info[/bold]
 • ----
@@ -293,21 +294,29 @@ class P(Plugin):
 
         # update the hover info labels
         try:
+            affected_cells: DeltaCell = tuple(event.affected_cells)[column_idx]
+            created_cells: int = len(affected_cells.new_cells)
+            destroyed_cells: int = len(affected_cells.destroyed_cells)
+        except IndexError:
+            created_cells: None = None
+            destroyed_cells: None = None
+        try:  # in separate try block because of the destroyed_at maybe not existing
             cell_destroyed_at: int = flow_cell.destroyed_at[column_idx]
             lifespan: int = cell_destroyed_at - flow_cell.created_at
         except IndexError:
             cell_destroyed_at: None = None
             lifespan: None = None
         connected_events = tuple(event.causally_connected_events)
-        self.hovered_info_label.content = f"""[bold]Event #{event.time} Info[/bold]
-• Created Spaces: {len(spaces)}
-• Affected Cells: {len(tuple(event.affected_cells))}
+        self.hovered_info_label.content = f"""[bold]Event #{event.time} | Space #{column_idx}[/bold]
+• Branched Spaces: {len(spaces) - 1}
 • Space Size: {len(space_state)}
 • Causal Distance: {event.causal_distance_to_creation}
-• Connected Events Abs: {len(connected_events)}
-• Connected Events Set: {len(set(connected_events))}
+• Connected Abs: {len(connected_events)}
+• Connected Set: {len(set(connected_events))}
+• Created Cells: {created_cells}
+• Destroyed Cells: {destroyed_cells}
 
-[bold]Cell #{offset} Info[/bold]
+[bold]Cell #{offset}[/bold]
 • Quanta: {flow_cell.quanta}
 • Created at: {flow_cell.created_at}
 • Destroyed at: {cell_destroyed_at}
