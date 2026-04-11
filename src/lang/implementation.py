@@ -9,7 +9,7 @@ In the future, we may consider making the search_buffer branch-able (really, it 
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
-from typing import Sequence, NamedTuple, Literal, cast, Iterator
+from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self
 from copy import deepcopy, copy
 from core.numlib import INF
 from core.signals import Signal
@@ -36,12 +36,12 @@ class Target(NamedTuple):
 class BaseRule(RuleABC):
     # ======== Signals ========
     # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
-    on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces are passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
+    on_applied: Signal[Self, Sequence[DeltaSpace]] = Signal()  # if the apply() function was called. The modified spaces are passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
 
     # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
-    on_execution: Signal = Signal()
-    on_branch: Signal = Signal()
-    on_conflict: Signal = Signal()
+    on_execution: Signal[Self, RuleMatch, int] = Signal()
+    on_branch: Signal[Self, RuleMatch, int] = Signal()
+    on_conflict: Signal[Self, RuleMatch, int] = Signal()
 
     FLAG_ALIAS: dict[str, str] = {
         # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
