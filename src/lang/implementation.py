@@ -72,7 +72,7 @@ class BaseRule(RuleABC):
     def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
         super().__init__()
         # Functionality Fields (you can have multiple selectors and multiple targets)
-        self.selectors: Sequence[Selector] = selector  # used by self.match()
+        self.selector: Sequence[Selector] = selector  # used by self.match()
         self.target: Sequence[Target] = target  # used by self.apply()
 
         # Complex Functionality
@@ -107,7 +107,7 @@ class BaseRule(RuleABC):
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {[t.target for t in self.target]})"
+        return f"{self.__class__.__name__}({[s.selector for s in self.selector]}, {[t.target for t in self.target]})"
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
@@ -144,7 +144,7 @@ class BaseRule(RuleABC):
             for self in top_self.chain:
                 if self.disabled:  # we must check if the rule has been disabled in case the rule is in a chain (has been merged)
                     continue
-                for pattern in self.selectors:
+                for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type in ('literal', 'regex'):
                         # finds = space.find(tuple(Cell(c) for c in pattern.selector))  # older slow way (before Vec containers)

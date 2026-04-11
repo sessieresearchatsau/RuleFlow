@@ -1,17 +1,20 @@
 # Textual Imports
-from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, Button
+from rich.text import Text
+from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
 from textual.widgets.selection_list import Selection
+from textual.containers import VerticalScroll, Horizontal, Vertical
 from textual.events import MouseMove
 
 # Standard Imports
-from typing import Iterator
+from typing import Iterator, Sequence
 from core.numlib import INF, str_to_num, is_infinity
-from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaCell
+from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
 from core.prettier import SpaceStateStringFormatter
 from core.signals import Signal
+from lang.implementation import BaseRule
 from studio.model import Plugin, FlowLangBase
 
 
@@ -51,6 +54,23 @@ class DataTable(_DataTable):
         self.sig_mouse_over_inner_cell.emit(coord, char_offset)
 
 
+class RulesetDashboard(VerticalScroll):
+    """A scoped container specifically for the ruleset layout."""
+
+    DEFAULT_CSS = """
+    RulesetDashboard Horizontal {
+        height: auto;
+        width: 100%;
+        margin-bottom: 1;
+    }
+    RulesetDashboard Vertical {
+        width: 1fr;
+        height: auto;
+        margin-right: 1;
+    }
+    """
+
+
 class P(Plugin):
     def on_initialized(self) -> None:
         self.name = 'explore'
@@ -63,12 +83,13 @@ class P(Plugin):
         self._render_range: tuple[int, int] = (-100, INF)
         self._space_columns_limit: int = 1
         self._hidden_space_columns: set[int] = set()
-        self._columns_control_bitmap: list[bool] = [True, False, False, False, False]
+        self._columns_control_bitmap: list[bool] = [True, False, False, False, False, False]
 
         # connect model signals
         self.model.active_flow.flow.on_evolved_n.connect(self.on_evolved)
         self.model.active_flow.flow.on_undone_n.connect(self.on_undo)
         self.model.active_flow.flow.on_clear.connect(self.on_clear)
+        self.model.active_flow.flow.on_ruleset_set.connect(lambda f: self.cft(self._rebuild_ruleset_table, f.ruleset.rules, self.ruleset_table))
 
         # connect view signals
         self.view.sig_input_submit.connect(self.handle_input_submit)
@@ -86,6 +107,8 @@ class P(Plugin):
         self.render_range = Input(value='-100:', placeholder='e.g. -10: or 3:10', id='render-limit')
         self.render_range.border_title = 'Render Range'
         yield self.render_range
+        self.show_ruleset = Checkbox('Show Ruleset', value=True, id='show-ruleset')
+        yield self.show_ruleset
 
         with Collapsible(title='Column Controls', collapsed=False):
             control_bits = self._columns_control_bitmap
@@ -94,7 +117,8 @@ class P(Plugin):
                 Selection("Causal Distance", 1, control_bits[1]),
                 Selection("Causally Connected", 2, control_bits[2]),
                 Selection(" ├─ Collapsed", 3, control_bits[3]),
-                Selection(" ╰─ Counted", 4, control_bits[4]),
+                Selection(" ├─ Sorted", 4, control_bits[4]),
+                Selection(" ╰─ Counted", 5, control_bits[5]),
                 id='column-controls'
             )
             self._rebuild_columns(rebuild_rows=False)  # must be called here or sometime after to initiated columns.
@@ -129,6 +153,8 @@ class P(Plugin):
             yield self.hovered_info_label
             self.hover_explorer = Checkbox('Hover Explorer', id='hover-explorer')
             yield self.hover_explorer
+            self.hover_ruleset_enabled = Checkbox('Hovered Event Ruleset', disabled=True, id='hover-ruleset-enabled')
+            yield self.hover_ruleset_enabled
             self.hover_style = Input("on black", placeholder='e.g. on red or bold blue', id='hover-style')
             self.hover_style.border_title = 'Hover Style'
             yield self.hover_style
@@ -198,14 +224,47 @@ class P(Plugin):
     def handle_checkbox_change(self, e: Checkbox.Changed):
         _id: str = e.checkbox.id
         if _id == 'hover-explorer':
-            self.data_table.enabled_sig_mouse_over_space_cell = e.checkbox.value
+            self.data_table.enabled_sig_mouse_over_space_cell = e.value
+            self.hover_ruleset_enabled.disabled = not e.value
+            if not e.value:
+                self.hover_ruleset_enabled.value = self.hovered_ruleset_container.display = False
+        if _id == 'hover-ruleset-enabled' and self.hover_explorer.value:
+            self.hovered_ruleset_container.display = e.value
+            if not e.value:
+                self.hovered_ruleset_table.clear()
+        if _id == 'show-ruleset':
+            self.ruleset_container.display = e.value
 
     def panel(self) -> TabPane | None:
+        # Ruleset Table
+        self.ruleset_table = _DataTable(id='hovered-ruleset-table', show_cursor=False)
+        self.ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
+        self.ruleset_container = Vertical(
+            Label('[bold] Active Ruleset Table [/bold]'),
+            self.ruleset_table
+        )
+
+        # Ruleset Table
+        self.hovered_ruleset_table = _DataTable(id='ruleset-table', show_cursor=False)
+        self.hovered_ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
+        self.hovered_ruleset_container = Vertical(
+            Label('[bold] Hovered Event Ruleset Table [/bold]'),
+            self.hovered_ruleset_table,
+        )
+        self.hovered_ruleset_container.display = False
+
+        # Evolution Table
         self.data_table = DataTable(id='data-table')
         self.data_table.sig_mouse_over_inner_cell.connect(self._handle_mouse_over_data_table)
         return TabPane(
             self.name.title(),
-            self.data_table
+            RulesetDashboard(
+                Horizontal(
+                    self.ruleset_container,
+                    self.hovered_ruleset_container
+                ),
+                self.data_table
+            )
         )
 
     def _handle_styling_update(self):
@@ -231,6 +290,9 @@ class P(Plugin):
             control_bitmap[4],
             symbol_map
         )
+
+        # noinspection PyTypeChecker
+        self._rebuild_ruleset_table(self.model.active_flow.flow.ruleset.rules, self.ruleset_table)
         self._rebuild_rows()
 
     def _reset_hovered_info_label(self):
@@ -280,9 +342,10 @@ class P(Plugin):
         column_idx: int = int(cell_key.column_key.value)
 
         # grab all relevant information about the selected space
-        event: FlowEvent = self.model.active_flow.flow.events[row_idx]
-        spaces: tuple[SpaceState, ...] = tuple(event.spaces)
-        space_state: SpaceState = spaces[column_idx]
+        flow: FlowLangBase = self.model.active_flow.flow
+        event: FlowEvent = flow.events[row_idx]
+        spaces: tuple[tuple[DeltaSpaces, DeltaSpace, SpaceState], ...] = tuple(event.spaces_with_metadata)
+        space_state: SpaceState = spaces[column_idx][2]
 
         # update the rows
         if offset >= len(space_state):
@@ -323,6 +386,49 @@ class P(Plugin):
 • Lifespan: {lifespan}
 """
 
+        # place the rule (and its chain if there is one) in the hovered ruleset table.
+        if self.hover_ruleset_enabled.value:
+            applied_rule: BaseRule = spaces[column_idx][0].rule
+            if applied_rule:
+                self._rebuild_ruleset_table(applied_rule.chain, self.hovered_ruleset_table, hide_disabled=True, remember_old_row_length=True)
+
+    def _rebuild_ruleset_table(self, rules: Sequence[BaseRule],
+                               table: DataTable,
+                               hide_disabled: bool = False,
+                               remember_old_row_length: bool = False) -> None:
+        # we have the f parameter because this is called by a Flow signal.
+        def print_rule(rule: BaseRule) -> tuple[Text, Text]:
+            selectors: list[Text] = []
+            for s in rule.selector:
+                sv = s.selector
+                if isinstance(sv, str | bytes):
+                    selectors.append(self.space_state_formatter.convert_pure_str(sv))
+                else:
+                    selectors.append(Text(str(sv)))
+            targets: list[Text] = []
+            for t in rule.target:
+                tv = t.target
+                if isinstance(tv, int):
+                    targets.append(Text(str(tv)))
+                else:  # when `tv` is Sequence[Cell]
+                    targets.append(self.space_state_formatter.convert_pure_str(''.join(str(c) for c in tv)))
+            return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0],
+                    Text(', ').join(targets) if len(targets) > 1 else targets[0])
+
+        old_rows: int = table.row_count
+        table.clear()
+        rule: BaseRule
+        for i, rule in enumerate(rules):
+            if hide_disabled and rule.disabled:
+                continue
+            table.add_row(
+                *print_rule(rule), rule.__class__.__name__, rule.group,
+                label=str(i)
+            )
+            old_rows -= 1
+        if remember_old_row_length and old_rows:
+            for _ in range(old_rows): table.add_row()
+
     def on_evolved(self, f: FlowLangBase, steps: int) -> None:
         cft = self.cft
         dt = self.data_table
@@ -357,8 +463,8 @@ class P(Plugin):
 
     def on_clear(self):
         try:
-            self.cft(self.data_table.clear)  # this function may be called within the main thread.
-        except RuntimeError:
+            self.cft(self.data_table.clear)
+        except RuntimeError:  # this function may or may not be called within the main thread.
             self.data_table.clear()
 
     def _add_row(self, event: FlowEvent):
@@ -371,10 +477,12 @@ class P(Plugin):
                 connected = set(event.causally_connected_events)
             else:
                 connected = tuple(event.causally_connected_events)
-            if control_bitmap[4]:  # if we are counting the causally connect (to display that metric instead)
+            if control_bitmap[5]:  # if we are counting the causally connect (to display that metric instead)
                 connected = len(connected)
+            elif control_bitmap[4]:
+                connected = sorted(connected)
         else:
-            connected = None
+            connected = None  # just to satisfy the IDE wanting a name in the space
         for data, show in zip((event.time,
                                event.causal_distance_to_creation,
                                connected),

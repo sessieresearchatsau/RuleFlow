@@ -1,4 +1,5 @@
 // Rule 30
+@init("A" * 10 + "B" + 10 * "A");
 @import(ca.fp);
 
 // define the rules

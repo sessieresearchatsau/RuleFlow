@@ -11,19 +11,22 @@ from rich.text import Text
 from core.engine import SpaceState
 
 
+COLOR_PALETTE: list[str] = [
+    '#1a4e8b', '#8b0000', '#2d8b2d', '#8b1a72', '#00728b', '#8b5e1a', '#4e1a8b', '#6b8b1a', '#8b1a43', '#1a7e8b',
+    '#7b8b1a', '#5c1a8b', '#1a8b43', '#8b431a', '#1a2d8b', '#8b7b1a', '#8b1a62', '#1a8b7e', '#3c1a8b', '#3d8b1a',
+    '#8b221a', '#1a5c8b', '#1a8b22', '#6e1a8b', '#5a8b1a', '#8b1a82', '#1a8b51', '#8b691a', '#2d1a8b', '#4e8b1a',
+    '#8b1a33', '#1a788b', '#7e8b1a', '#471a8b', '#1a8b34', '#8b3d1a', '#1a3d8b', '#628b1a', '#8b1a6e', '#1a648b',
+    '#758b1a', '#221a8b', '#1a8b4e', '#8b511a', '#348b1a', '#511a8b', '#1a8b6e', '#8b1a22', '#1a4e8b', '#5a8b1a',
+    '#6e1a8b', '#7b8b1a', '#1a8b3d', '#8b2d1a', '#1a228b', '#6b8b1a', '#8b1a7b', '#1a7b8b', '#838b1a', '#431a8b',
+    '#228b1a', '#8b1a4e', '#64676E'
+]  # 63 colors for ascii_uppercase + ascii_lowercase + digits + '_'
+
+
 class SpaceStateStringFormatter:
     def __init__(self) -> None:
-        # We leave these here for maximal configuration.
-        self.default_colors = [
-            '#1a4e8b', '#8b0000', '#2d8b2d', '#8b1a72', '#00728b', '#8b5e1a', '#4e1a8b', '#6b8b1a', '#8b1a43', '#1a7e8b',
-            '#7b8b1a', '#5c1a8b', '#1a8b43', '#8b431a', '#1a2d8b', '#8b7b1a', '#8b1a62', '#1a8b7e', '#3c1a8b', '#3d8b1a',
-            '#8b221a', '#1a5c8b', '#1a8b22', '#6e1a8b', '#5a8b1a', '#8b1a82', '#1a8b51', '#8b691a', '#2d1a8b', '#4e8b1a',
-            '#8b1a33', '#1a788b', '#7e8b1a', '#471a8b', '#1a8b34', '#8b3d1a', '#1a3d8b', '#628b1a', '#8b1a6e', '#1a648b',
-            '#758b1a', '#221a8b', '#1a8b4e', '#8b511a', '#348b1a', '#511a8b', '#1a8b6e', '#8b1a22', '#1a4e8b', '#5a8b1a',
-            '#6e1a8b', '#7b8b1a', '#1a8b3d', '#8b2d1a', '#1a228b', '#6b8b1a', '#8b1a7b', '#1a7b8b', '#838b1a', '#431a8b',
-            '#228b1a', '#8b1a4e'
-        ]
-        self.chars = ascii_uppercase + ascii_lowercase + digits
+        # We have these here for maximal configuration.
+        self.default_colors = COLOR_PALETTE.copy()
+        self.chars = ascii_uppercase + ascii_lowercase + digits + '_'
 
         # this holds pre-rendered Text objects for every character
         self._rich_mapping: dict[str, Text] = {}
@@ -78,6 +81,11 @@ class SpaceStateStringFormatter:
                     cell.stylize(cell_id_style)
                 yield cell
         return Text(end='').join(iter_cells())
+
+    def convert_pure_str(self, string: str) -> Text:
+        """Utility method in case a given string needs to be styles the same as the space states (can be used in a ruleset printer for instance)."""
+        rm = self._rich_mapping
+        return Text(end='').join(rm.get(str(c), Text(str(c), end='')) for c in string)
 
 if __name__ == "__main__":
     from src.implementations.sss import SSS

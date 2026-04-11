@@ -337,7 +337,7 @@ class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpa
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
     output_space: Sequence[SpaceState | None]  # can include many children branches
-    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array
+    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array (so branches align)
 
     def __bool__(self) -> bool:
         return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding or deleting?
@@ -387,6 +387,15 @@ class Event:
                     if space is not None:
                         yield space
 
+    @property  # maybe cache this?
+    def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, SpaceState]]:
+        """Returns all newly created spaces along with their metadata (in the parent structure)"""
+        for r in self.space_deltas:
+            for space_delta in r.space_deltas:
+                for space in space_delta.output_space:
+                    if space is not None:
+                        yield r, space_delta, space
+
     def __str__(self):
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedication printer
 
@@ -400,9 +409,10 @@ class Flow:
     on_undone_step: Signal[Self] = Signal()
     on_undone_n: Signal[Self, int] = Signal()  # after all undo's
     on_clear: Signal[Self] = Signal()
+    on_ruleset_set: Signal[Self] = Signal()
 
     def __init__(self):
-        self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
+        self.ruleset: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
 
         # progress tracking attributes
@@ -410,7 +420,8 @@ class Flow:
 
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
-        self.rule_set: RuleSet = ruleset
+        self.ruleset: RuleSet = ruleset
+        self.on_ruleset_set.emit(self)
 
     def set_initial_space(self, initial_space: Sequence[SpaceState]) -> None:
         """Used to set the initial space"""
@@ -444,7 +455,7 @@ class Flow:
             - set the applied rules (the applied rules are associated with the space states they modified)
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
         """
-        applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces))
+        applied_rules: list[DeltaSpaces] = self.ruleset.apply(to_spaces=tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return

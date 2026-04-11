@@ -192,7 +192,7 @@ class FlowLang(FlowLangBase):
 
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
-        rules: list[BaseRule] = cast(list[BaseRule], self.rule_set.rules)
+        rules: list[BaseRule] = cast(list[BaseRule], self.ruleset.rules)
         for i in range(len(rules)):
             if rules[i].disabled:
                  continue
@@ -206,7 +206,7 @@ class FlowLang(FlowLangBase):
 
     def __compress_group(self, identifier: int | str):
         """A directive to compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
-        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
+        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.ruleset.rules)
                                  if rule.group == identifier and not rule.disabled]
         # If any rule makes no changes, disable it.
         for rule in rules:
@@ -214,7 +214,7 @@ class FlowLang(FlowLangBase):
                 continue
             rule_is_active: bool = False
             for target in rule.target:
-                for selector in rule.selectors:
+                for selector in rule.selector:
                     for s_char, t_char in zip(selector.selector, target.target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different match sets)
                         if t_char.quanta == '_':
                             continue

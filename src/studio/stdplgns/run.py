@@ -40,6 +40,9 @@ class P(Plugin):
 
     def controls(self) -> Iterator[Widget]:
         # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
+        self.undo_steps = Input(type='integer', value='1')
+        self.undo_steps.border_title = 'Undo Button Steps'
+        yield self.undo_steps
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable hot reload mode', id='hot-reload')
             yield self.hot_mode
@@ -87,6 +90,8 @@ class P(Plugin):
         btn: str = e.button.id
         if btn == 'btn-run':
             self.execute_run()
+        elif btn == 'btn-undo':
+            self.execute_undo()
         elif btn == 'btn-clear':
             self.model.active_flow.flow.clear_evolution()
         elif btn == 'clear-log':
@@ -174,5 +179,23 @@ class P(Plugin):
         )
         self.log_view.write(f'[bold green]Run "{active_flow.name}" flow...[/bold green]')
         # TODO: maybe more info will be logged at some point (if deemed useful)
+
+    def execute_undo(self) -> None:
+        """Handles the flow undo and updates the UI components."""
+        active_flow = self.model.active_flow
+        if not active_flow:
+            self.log_view.write("[bold red]Studio Error:[/bold red] No active flow selected to undo.")
+            return
+        if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
+            self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
+            return
+        try:
+            self._running_thread = self.view.run_worker(
+                lambda: self.model.active_flow.flow.undo(int(self.undo_steps.value)),
+                thread=True
+            )
+            self.log_view.write(f'[bold green]Undo "{active_flow.name}" flow...[/bold green]')
+        except:
+            self.log_view.write("[bold red]Studio Error:[/bold red] Could not execute undo command.")
 
 plugin = P()
