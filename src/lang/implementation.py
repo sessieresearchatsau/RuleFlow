@@ -1,17 +1,17 @@
 """The implementation for 1D space that supports the language features.
 
 Policy:
-- Any multiways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
+- Any multi-ways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
 become corrupt when branching (one state spawning two states). We have considered coding buffer branching logic...
-however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer.
+however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer (forgot why).
 In the future, we may consider making the search_buffer branch-able (really, it is already possible by manually using Vec.search_buffer.copy()).
 
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
-from typing import Sequence, NamedTuple, Literal, cast, Iterator
+from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self
 from copy import deepcopy, copy
-from lang.numerical_helpers import INF
+from core.numlib import INF
 from core.signals import Signal
 from core.engine import (
     SpaceState1D as SpaceState,
@@ -36,12 +36,12 @@ class Target(NamedTuple):
 class BaseRule(RuleABC):
     # ======== Signals ========
     # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
-    on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces is passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
+    on_applied: Signal[Self, Sequence[DeltaSpace]] = Signal()  # if the apply() function was called. The modified spaces are passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
 
     # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
-    on_execution: Signal = Signal()
-    on_branch: Signal = Signal()
-    on_conflict: Signal = Signal()
+    on_execution: Signal[Self, RuleMatch, int] = Signal()
+    on_branch: Signal[Self, RuleMatch, int] = Signal()
+    on_conflict: Signal[Self, RuleMatch, int] = Signal()
 
     FLAG_ALIAS: dict[str, str] = {
         # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
@@ -72,7 +72,7 @@ class BaseRule(RuleABC):
     def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
         super().__init__()
         # Functionality Fields (you can have multiple selectors and multiple targets)
-        self.selectors: Sequence[Selector] = selector  # used by self.match()
+        self.selector: Sequence[Selector] = selector  # used by self.match()
         self.target: Sequence[Target] = target  # used by self.apply()
 
         # Complex Functionality
@@ -106,9 +106,8 @@ class BaseRule(RuleABC):
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
-
     def __repr__(self):
-        return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {[t.target for t in self.target]})"
+        return f"{self.__class__.__name__}({[s.selector for s in self.selector]}, {[t.target for t in self.target]})"
 
     def _conflict_detector(self, current_matches: list[tuple[int, int]], match: tuple[int, int]) -> set[int]:
         """helper that detects collisions between selectors"""
@@ -145,7 +144,7 @@ class BaseRule(RuleABC):
             for self in top_self.chain:
                 if self.disabled:  # we must check if the rule has been disabled in case the rule is in a chain (has been merged)
                     continue
-                for pattern in self.selectors:
+                for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type in ('literal', 'regex'):
                         # finds = space.find(tuple(Cell(c) for c in pattern.selector))  # older slow way (before Vec containers)

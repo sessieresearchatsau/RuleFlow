@@ -1,4 +1,4 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from copy import copy
@@ -337,7 +337,7 @@ class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpa
     """Single application of a rule within Rule.apply()."""
     input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
     output_space: Sequence[SpaceState | None]  # can include many children branches
-    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array
+    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array (so branches align)
 
     def __bool__(self) -> bool:
         return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding or deleting?
@@ -387,34 +387,47 @@ class Event:
                     if space is not None:
                         yield space
 
+    @property  # maybe cache this?
+    def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, SpaceState]]:
+        """Returns all newly created spaces along with their metadata (in the parent structure)"""
+        for r in self.space_deltas:
+            for space_delta in r.space_deltas:
+                for space in space_delta.output_space:
+                    if space is not None:
+                        yield r, space_delta, space
+
     def __str__(self):
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedication printer
 
 
-# We use these noinspections because of stupid PyCharm bug regarding slots and dataclasses that has not been fixed...
-# noinspection PyDunderSlots,PyUnresolvedReferences
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     # Signals (can be used to live update analysis objects like the causal graph)
-    on_evolve: Signal = Signal()
-    on_undo: Signal = Signal()
+    on_evolved_step: Signal[Self] = Signal()
+    on_evolved_n: Signal[Self, int] = Signal()  # after all evolves
+    on_undone_step: Signal[Self] = Signal()
+    on_undone_n: Signal[Self, int] = Signal()  # after all undo's
+    on_clear: Signal[Self] = Signal()
+    on_ruleset_set: Signal[Self] = Signal()
 
     def __init__(self):
-        self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
+        self.ruleset: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
-        self.event_index_offset: int = 0
+
+        # progress tracking attributes
+        self.n_step_progress: float = 0  # percentage of steps run by some_method_n().
 
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
-        self.rule_set: RuleSet = ruleset
+        self.ruleset: RuleSet = ruleset
+        self.on_ruleset_set.emit(self)
 
     def set_initial_space(self, initial_space: Sequence[SpaceState]) -> None:
         """Used to set the initial space"""
-        self.events.insert(
-            0,
-            Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be i as well so that next evolve() works.
-        )
+        if not self.events:
+            self.events.append(cast(Event, cast(object, 0)))
+        self.events[0] = Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be `i` as well so that next evolve() works.
         for i in initial_space:
             for cell in i.get_all_cells():
                 cell.created_at = 0
@@ -422,30 +435,17 @@ class Flow:
     def clear_evolution(self) -> None:
         """Clear the evolution."""
         del self.events[1:]
+        self.on_clear.emit(self)
 
     @property
     def current_event(self) -> Event:
-        try:
-            return self.events[self.current_event_idx]
-        except IndexError:  # when the offset is too large or no events exist
-            if len(self.events) == 0:
-                raise IndexError('No events exist')
-            self.set_event_offset(0)  # fix offset
-            return self.current_event
+        return self.events[-1]
 
     @property
     def current_event_idx(self) -> int:
-        return len(self.events) - 1 - self.event_index_offset
+        return len(self.events) - 1
 
-    def set_event_offset(self, offset: int, from_init: bool = False) -> None:
-        """Shift the current index in the flow of events"""
-        if offset < 0:
-            raise ValueError('Offset cannot be negative')
-        if from_init:
-            offset = len(self.events) - 1 - offset
-        self.event_index_offset = offset
-
-    def evolve(self) -> None:
+    def _evolve(self) -> None:
         """ Evolve the system by one step.
 
         This can be reimplemented by subclasses to modify behavior. As it stands, it does the following:
@@ -455,7 +455,7 @@ class Flow:
             - set the applied rules (the applied rules are associated with the space states they modified)
             - extract all the modified space states from the applied rules and add them to the space states of the Event.
         """
-        applied_rules: list[DeltaSpaces] = self.rule_set.apply(to_spaces=tuple(self.current_event.spaces))
+        applied_rules: list[DeltaSpaces] = self.ruleset.apply(to_spaces=tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
@@ -476,22 +476,29 @@ class Flow:
                         cell.destroyed_at += (current_event_idx,)  # first one, of course, will be the main lineage
 
         # process causal distance to creation
-        min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
+        min_prev: int = min((self.events[e_idx].causal_distance_to_creation
+                             for e_idx in self.current_event.causally_connected_events),
+                            default=-1)
         self.current_event.causal_distance_to_creation = min_prev + 1
 
         # emit any signals
-        self.on_evolve.emit(self)
+        self.on_evolved_step.emit(self)
 
-    def evolve_n(self, n_steps: int, break_when_inert: bool = False) -> None:
+    def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
-        while n_steps > 0:
+        i: int = 0
+        while i < n_steps:
             # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
-            self.evolve()
-            n_steps -= 1
+            self.n_step_progress = (i + 1) / n_steps
+            i += 1
+            self._evolve()
             if break_when_inert and self.current_event.inert:
                 break
 
-    def undo(self) -> None:
+        # emit any signals
+        self.on_evolved_n.emit(self, n_steps)
+
+    def _undo(self) -> None:
         """undo the last event..."""
         if self.current_event_idx == 0:
             return
@@ -500,17 +507,17 @@ class Flow:
                 for dc in sd.cell_deltas:
                     for cell in dc.destroyed_cells:
                         cell.destroyed_at = tuple(i for i in cell.destroyed_at if i != self.current_event_idx)
-                    if self.event_index_offset:  # shift the created_at up if we are in the middle of an evolution
-                        for cell in dc.new_cells:
-                            cell.created_at = current_event_idx + 1
-        self.events.pop(self.current_event_idx)
+        self.events.pop()
 
         # emit any signals
-        self.on_undo.emit(self)
+        self.on_undone_step.emit(self)
 
-    def undo_n(self, n_steps: int) -> None:
+    def undo(self, n_steps: int) -> None:
         for _ in range(n_steps):
-            self.undo()
+            self.n_step_progress = (_ + 1) / n_steps
+            self._undo()
+
+        self.on_undone_n.emit(self, n_steps)
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)

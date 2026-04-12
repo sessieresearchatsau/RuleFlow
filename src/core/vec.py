@@ -198,6 +198,10 @@ class Vec(MutableSequence):
     def __deepcopy__(self, memo):  # force it to use self.branch for safety
         return self.branch()
 
+    def refresh_search_buffer(self):
+        """Must be called if you want to refresh a dirty search buffer."""
+        self.search_buffer = bytearray((ord(c.quanta) for c in self.vec))
+
     # ================ Viewer Methods ================
     def __len__(self):
         return len(self.vec)
@@ -288,7 +292,7 @@ class TrieVec(Vec):
         nv: TrieVec = object.__new__(TrieVec)
         nv.vec = self.vec  # we don't need to copy as edit() will do that for us
         nv.evolver = None
-        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch (use branch_search_buffer(rfp=True) to reconstruct clean buffer for self)
+        nv.search_buffer = self.search_buffer  # note: becomes dirty on self after branch
         # we could auto enter edit mode here... however, that is not necessary as this should work just fine because it is auto entered upon edits.
         return nv
 

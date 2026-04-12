@@ -49,20 +49,6 @@ ModalDialog {
     height: auto;
 }
 
-/* Inputs and Border Titles */
-ModalDialog Input {
-    width: 100%;
-    margin: 1 0;  /* Vertical margin gives space for the border title */
-    background: #252526;
-    border: round #444444;
-    color: #e0e0e0;
-}
-
-ModalDialog Input:focus {
-    border: round #007acc;
-    background-tint: #252526;
-}
-
 /* Notes (Static text blocks) */
 .modal-note {
     width: 100%;
@@ -162,7 +148,6 @@ EditorScreen {
 #workspace {
     width: 2fr;
     height: 100%;
-    border-right: solid #2b2b2b;
     layout: vertical;
 }
 
@@ -171,8 +156,7 @@ EditorScreen {
     padding: 1 2;
 }
 
-/*The flow selector dropdown*/
-#select-flow {
+#select-flow {  /*The flow selector dropdown*/
     width: 10;
 }
 
@@ -190,12 +174,38 @@ EditorScreen {
     width: 1fr;
     height: 100%;
     background: #181818;
+    border-left: solid #2b2b2b;
     min-width: 30;
 }
 
 
 /* =========================================
    COMPONENT STYLES
+   ========================================= */
+
+Input {
+    width: 1fr;
+    background: rgba(0, 0, 0, 0);
+    border: round #7a7a7a;
+    color: #e0e0e0;
+}
+
+Input:focus {
+    border: round #007acc;
+    background-tint: #252526;
+}
+
+RichLog {
+    overflow: auto;
+}
+
+Collapsible {
+    padding-right: 1;
+    padding-bottom: 1;
+}
+
+/* =========================================
+   COMPONENT CLASSES
    ========================================= */
 
 .full-width {

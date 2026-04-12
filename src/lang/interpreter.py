@@ -122,18 +122,29 @@ def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, An
     return returns
 
 
-# TODO: decouple the self.events from the compilation phase so that rulesets can be changed without affecting the current evolution!!!
 class FlowLangBase(Flow):
     """The general API of the Flow object used in all language implementations."""
-
-    def interpret(self, s: str) -> None:
-        """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
-        raise NotImplementedError()
 
     def interpret_file(self, path: str) -> None:
         """opens `.flow` files and constructs a FlowLang object."""
         with open(path, 'r') as f:
             return self.interpret(f.read())
+
+    def interpret(self, s: str) -> None:
+        """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
+        raise NotImplementedError()
+
+    def undo(self, n_steps: int) -> None:
+        super().undo(n_steps)
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
+
+    def clear_evolution(self) -> None:
+        super().clear_evolution()
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
 
 
 class FlowLang(FlowLangBase):
@@ -167,18 +178,21 @@ class FlowLang(FlowLangBase):
             )
         ))
         Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
+        if not self.events:
+            self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
 
         # after instantiation
         interpret_directives({
-            'evolve': self.evolve_n,
+            'evolve': self.evolve,
+            'undo': self.undo,
+            'clear': self.clear_evolution,
             'merge': self.__merge_group,
             'compress': self.__compress_group
         }, self.ast['directives'])
 
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
-        rules: list[BaseRule] = cast(list[BaseRule], self.rule_set.rules)
+        rules: list[BaseRule] = cast(list[BaseRule], self.ruleset.rules)
         for i in range(len(rules)):
             if rules[i].disabled:
                  continue
@@ -191,8 +205,8 @@ class FlowLang(FlowLangBase):
                 break
 
     def __compress_group(self, identifier: int | str):
-        """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
-        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
+        """A directive to compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
+        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.ruleset.rules)
                                  if rule.group == identifier and not rule.disabled]
         # If any rule makes no changes, disable it.
         for rule in rules:
@@ -200,7 +214,7 @@ class FlowLang(FlowLangBase):
                 continue
             rule_is_active: bool = False
             for target in rule.target:
-                for selector in rule.selectors:
+                for selector in rule.selector:
                     for s_char, t_char in zip(selector.selector, target.target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different match sets)
                         if t_char.quanta == '_':
                             continue
@@ -215,7 +229,6 @@ if __name__ == "__main__":
     import os
     import gc
     import timeit
-
 
     def get_mem():
         """Returns current resident set size in MB."""
@@ -238,7 +251,7 @@ if __name__ == "__main__":
     // A -> ACB;
     """
     flow = FlowLang(code)
-    time = timeit.timeit(lambda: flow.evolve_n(18), number=1)
+    time = timeit.timeit(lambda: flow.evolve(18), number=1)
 
     mem_end = get_mem()
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")

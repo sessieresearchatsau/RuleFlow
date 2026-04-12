@@ -1,24 +1,30 @@
 """View/Controller side of the MVC paradigm
 
+LongTermTODO:
+- Make each flow session have its own text editor.
+- Add edit buttons create, rename, and delete files.
+
 Policies:
 - For software design reasons, it is best to make the user-flow from welcome screen to editor irreversible for the
 current process so that we don't have to introspectively modify state if the user selects a different project.
-This decision was made due to the ease of plugin implementation and project saving.
+This decision was made due to the ease of plugin implementation and project saving. At some point, however, we may
+prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
 from typing import cast, Iterable
 from textual.app import App, ComposeResult
-from textual.containers import Container, Center, Horizontal, Vertical
+from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
-    DirectoryTree as _DT, TextArea, Button, Label,
-    Select, TabbedContent, OptionList, Input,
+    DirectoryTree as _DirectoryTree, TextArea as _TextArea, Button, Label,
+    Select, TabbedContent, OptionList, Input, SelectionList,
     Footer, ContentSwitcher, Static, Checkbox
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
 from studio import config
 from studio import model
+from core.signals import Signal  # we don't use Textual builtin signal system due to limitation with widget mounting being required first.
 
 
 LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
@@ -36,13 +42,74 @@ class Spacer(Static):
         self.styles.width = '1fr'  # make it take up as much space as possible
 
 
-class DirectoryTree(_DT):
+class DirectoryTree(_DirectoryTree):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         for path in paths:
-            if str(path).endswith("__") or str(path).startswith("__"):
+            if str(path.stem) == 'plugins' or str(path).endswith("__") or str(path).startswith("__"):
                 continue
             if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
                 yield path
+
+
+class TextArea(_TextArea):
+    def load_text(self, text: str | None) -> None:
+        """Overrides the load_text method so that placeholders work properly..."""
+        # NOTE: edit history is cleared
+        if text is None:
+            super().load_text("")
+            self.disabled = True
+            self.placeholder = "// Select a .flow file to begin..."
+            return
+        if self.disabled: self.disabled = False
+        super().load_text(text)
+        self.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
+
+
+# import re
+# class CustomHighlightTextArea(TextArea):
+#     # 1. Define your custom highlighting rules as (regex_pattern, highlight_name)
+#     # The 'highlight_name' should match standard names used in Textual themes
+#     # (e.g., "keyword", "string", "comment", "number", "variable", "function").
+#     HIGHLIGHT_RULES = [
+#         (r"\b(def|class|return|if|else|elif|import|from)\b", "keyword"),
+#         (r'".*?"|\'.*?\'', "string"),
+#         (r"#.*", "comment"),
+#         (r"\b\d+\b", "number"),
+#         (r"\b[A-Z][a-zA-Z0-9_]*\b", "type"),  # Class names
+#     ]
+#
+#     def on_mount(self) -> None:
+#         # Pre-compile the regexes for performance when the widget mounts
+#         self._compiled_rules = [
+#             (re.compile(pattern), name)
+#             for pattern, name in self.HIGHLIGHT_RULES
+#         ]
+#
+#     def _build_highlight_map(self) -> None:
+#         """Override to apply custom regex-based highlights instead of tree-sitter."""
+#
+#         # 1. Clear the existing line cache and highlight map
+#         self._line_cache.clear()
+#         self._highlights.clear()
+#
+#         # 2. Iterate over every line in the document
+#         for line_index in range(self.document.line_count):
+#             line_text = self.document[line_index]
+#
+#             # 3. Apply each regex rule to the current line
+#             for regex, highlight_name in self._compiled_rules:
+#                 for match in regex.finditer(line_text):
+#                     # 4. CRITICAL: Convert Python's character indices to byte offsets.
+#                     # Textual's `_render_line` expects byte offsets because that is
+#                     # what Tree-sitter natively outputs.
+#                     start_char, end_char = match.span()
+#                     start_byte = len(line_text[:start_char].encode("utf-8"))
+#                     end_byte = len(line_text[:end_char].encode("utf-8"))
+#
+#                     # 5. Append the highlight tuple for this line
+#                     self._highlights[line_index].append(
+#                         (start_byte, end_byte, highlight_name)
+#                     )
 
 
 class ModalDialog(ModalScreen[dict]):
@@ -155,6 +222,7 @@ class WelcomeScreen(Screen):
                 self.notify('Please enter a valid path to a directory.', severity='error')
                 return
             try:
+                # noinspection PyUnresolvedReferences
                 self.query_one("#recents-list").add_option(Option(f'{name} [grey]({path})[/grey]', name))
                 config.RecentProjects.add(name, path)
                 self.notify(f"Loaded project at: {path}")
@@ -190,11 +258,12 @@ class WelcomeScreen(Screen):
     def btn_open_project(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
         if i:=_.highlighted_option:
-            self.app.MODEL = model.Model(  # create an instance of model side of the MVC design
-                i.id,  # we use id as the field to store the name of the project
-                config.RecentProjects.get_path(i.id)
+            self.dismiss(
+                {
+                    "project_name": i.id,
+                    "project_path": config.RecentProjects.get_path(i.id)
+                }
             )
-            self.app.push_screen("editor")
         else:
             self.notify('Please select a project to open!', severity='warning')
 
@@ -224,24 +293,6 @@ class EditorScreen(Screen):
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
     ]
 
-    def __refresh_flow_selector__(self) -> None:
-        """Call to refresh the flow selector"""
-        # load flows
-        m: model.Model = self.app.MODEL
-        ol: Select = self.query_one("#select-flow")
-        ol.set_options([(f.name, i) for i, f in enumerate(m.flows)])
-        try:
-            # noinspection PyProtectedMember
-            ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
-        except: pass
-
-    def __refresh_plugin_components__(self) -> None:
-        pass
-
-    def on_mount(self) -> None:
-        self.__refresh_flow_selector__()
-        self.__refresh_plugin_components__()
-
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
         with Vertical(id="project-directory"):
@@ -253,43 +304,79 @@ class EditorScreen(Screen):
         with Vertical(id="workspace"):
             # Top Toolbar
             with Horizontal(id='workspace-toolbar'):
-                yield Label("▼ ", classes='gray')
-                yield Select((), id="select-flow", compact=True)
-                yield Button('+', id="btn-add-flow", compact=True, classes='increment-btn green')
-                yield Button('-', id="btn-sub-flow", compact=True, classes='increment-btn red')
+                self.open_file_label = Label("No Open File", classes='gray')
+                yield self.open_file_label
                 yield Spacer()
-                # yield Label("No Open File", classes='gray')
-                # yield Spacer()
                 yield Button("Run", id="btn-run", classes="action-btn green", compact=True)
-                yield Label("|", classes="separator")
-                yield Button("Debug", id="btn-debug", classes="action-btn orange", compact=True)
-                yield Label("|", classes="separator")
-                yield Button("Clear", id="btn-clear", classes="action-btn red", compact=True)
+                yield Label("| ", classes="gray")
+                yield Button("Undo", id="btn-undo", classes="action-btn orange", compact=True)
+                yield Label("| ", classes="gray")
+                yield Button("clear", id="btn-clear", classes="action-btn red", compact=True)
 
             # Code Editor
-            yield (_:=TextArea.code_editor(
-                text="// Select a .flow file to begin...",
+            self.code_editor_text_area: TextArea = TextArea.code_editor(
+                text="",
                 id="code-editor",
                 disabled=True
-            ))
+            )
+            yield self.code_editor_text_area
             # _.register_language()
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
                 # loop through the plugin TabPanes and yield them here
-                pass
+                for plugin in self.app.MODEL.plugins:
+                    if _:=plugin.panel():
+                        yield _
 
         # --- RIGHT COLUMN: Plugin Control Menu ---
         with Vertical(id="plugin-controls"):
-            yield Label("⭘ Run Settings", classes="pane-header", id="plugin-controls-header")
+            yield Label("", classes="pane-header", id="plugin-controls-header")
             with ContentSwitcher(id="sidebar-switcher"):
                 # loop through the collapsable's that the plugin provides, and place in Vertical containers.
-                pass
+                for i, plugin in enumerate(self.app.MODEL.plugins):
+                    with ScrollableContainer(id=f'tab-{i+1}'):
+                        for c in plugin.controls():
+                            yield c
 
         # --- Footer ---
         yield Footer()
 
-    # --- ACTION HANDLERS ---
+    # ==== Panel and Controls ====
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
+        """Dynamically switches the Right Sidebar content AND Title."""
+        container: ContentSwitcher = self.query_one('#sidebar-switcher')
+        container.current = event.pane.id
+        # noinspection PyProtectedMember
+        self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
+
+    # ==== File Manager ====
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
+        m: model.Model = self.app.MODEL
+        if not event.path.exists():
+            self.notify("That file no longer exists!", severity="error")
+            self.query_one(DirectoryTree).reload()
+            return
+        self.action_save_file()
+        m.open_file(event.path)
+        self.code_editor_text_area.text = m.read_file()
+        self.open_file_label.content = event.path.name
+
+    @on(Button.Pressed, '#btn_refresh_project_dir')
+    def btn_refresh_project_dir(self):
+        self.query_one(DirectoryTree).reload()
+        self.notify(f"Refreshed Project Directory...")
+
+    # ==== Action Handlers ====
+    def action_run(self):
+        """Action to press the run button upon this action..."""
+        self.query_one('#btn-run').press()
+
+    def action_save_file(self):
+        m: model.Model = self.app.MODEL
+        if m.write_file(self.code_editor_text_area.text):
+            self.notify(f"Saved the \"{m.flow_path.name}\" file.")
+
     def action_toggle_left_sidebar(self):
         sidebar = self.query_one("#project-directory")
         sidebar.display = not sidebar.display
@@ -314,117 +401,74 @@ class EditorScreen(Screen):
         else:
             self.maximize(self.focused)
 
-    # ==== Top Bar ====
-    @on(Button.Pressed, '#btn-add-flow')
-    def btn_add_flow(self):
-        def handle_modal_result(result: dict) -> None:
-            if result["pressed_button"] == "Cancel":
-                return
-            if not result["input"]["flow_name"]:
-                self.notify("A new flow must be given a name!", severity="error")
-                return
-            if not self.app.MODEL.create_new_flow(result["input"]["flow_name"], result["checkbox"]["branch_checkbox"]):
-                self.notify(f"A flow with name \"{result["input"]["flow_name"]}\" already exists.", severity="error")
-                return
-            self.__refresh_flow_selector__()
-            self.notify(f"Created the \"{self.app.MODEL.active_flow.name}\" flow session...")
+    # ==== Initial Setup and Signal Connections ====
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        # Push the screen with the configuration and callback
-        self.app.push_screen(
-            ModalDialog(
-                title="Flow Creation Tool",
-                fields=[
-                    {
-                        "type": "note",
-                        "text": "Create a new flow session and optionally branch it from the current flow session."
-                    },
-                    {
-                        "type": "input",
-                        "prompt": "New Flow Name",
-                        "placeholder": "e.g. Flow1",
-                        "id": "flow_name"
-                    },
-                    {
-                        "type": "checkbox",
-                        "label": "Branch from current flow session",
-                        "id": "branch_checkbox",
-                    }
-                ],
-                buttons=["Create", "Cancel"]
-            ),
-            callback=handle_modal_result
-        )
+        # ==== Signals ====
+        self.sig_button_pressed: Signal[Button.Pressed] = Signal()
+        self.sig_checkbox_changed: Signal[Checkbox.Changed] = Signal()
+        self.sig_input_submit: Signal[Input.Changed] = Signal()
+        self.sig_selection_list_toggled: Signal[SelectionList.SelectionToggled] = Signal()
+        self.sig_select_changed: Signal[Select.Changed] = Signal()
+        self.sig_save_config_directive: Signal = Signal()
 
-    @on(Button.Pressed, '#btn-sub-flow')
-    def btn_remove_flow(self):
-        if not self.app.MODEL.active_flow:
-            self.notify("Empty flow sessions!", severity="error")
-            return
-        def handle_modal_result(result: dict):
-            if result.get("pressed_button") == "Yes":
-                self.notify(f"Deleted the \"{self.app.MODEL.active_flow.name}\" flow session...")
-                self.app.MODEL.delete_selected_flow()
-                self.__refresh_flow_selector__()
-        self.app.push_screen(
-            ModalDialog(
-                title="Delete Flow?",
-                fields=[
-                    {
-                        "type": "note",
-                        "text": "Please confirm flow deletion..."
-                    }
-                ],
-                buttons=["Yes", "No", "Cancel"]
-            ),
-            callback=handle_modal_result
-        )
+    @on(Button.Pressed)
+    def _emit_button_signals(self, event: Button.Pressed) -> None:
+        """Handle emitting the button pressed signal"""
+        self.sig_button_pressed.emit(event)
 
-    @on(Select.Changed, '#select-flow')
-    def select_flow(self, event: Select.Changed):
-        if isinstance(event.value, int):
-            self.app.MODEL.active_flow = self.app.MODEL.flows[event.value]
+    @on(Checkbox.Changed)
+    def _emit_checkbox_signals(self, event: Checkbox.Changed) -> None:
+        """Handle emitting the checkbox changed signal"""
+        self.sig_checkbox_changed.emit(event)
 
-    @on(Button.Pressed, "#btn-clear")
-    def btn_clear(self):
-        pass
+    @on(Input.Submitted)
+    def _emit_input_submit_signals(self, event: Input.Changed) -> None:
+        """Handle emitting the input changed signal"""
+        self.sig_input_submit.emit(event)
 
-    @on(Button.Pressed, "#btn-debug")
-    def btn_debug(self):
-        pass
+    @on(SelectionList.SelectionToggled)
+    def _emit_selection_list_toggled(self, event: SelectionList.SelectionToggled) -> None:
+        """Handle emitting the selection list toggled signal"""
+        self.sig_selection_list_toggled.emit(event)
 
-    @on(Button.Pressed, "#btn-run")
-    def action_run(self):
-        pass
-
-    # ==== Panel and Controls ====
-    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
-        """Dynamically switches the Right Sidebar content AND Title."""
-        pass
-
-    # ==== File Manager ====
-    @on(Button.Pressed, '#btn_refresh_project_dir')
-    def btn_refresh_project_dir(self):
-        dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
-        dir_tree.reload()
-        self.notify(f"Refreshed Project Directory...")
+    @on(Select.Changed)
+    def _emit_select_changed(self, event: Select.Changed) -> None:
+        """Handle emitting the select changed signal"""
+        self.sig_select_changed.emit(event)
 
 
 class Main(App):
     CSS_PATH = "styles.tcss"
 
+    @property
+    def editor_screen(self) -> EditorScreen:
+        return cast(EditorScreen, self.get_screen('editor'))
+
     def on_mount(self):
         # create the screens and push the welcome page
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
-        self.push_screen("welcome")
+        def on_project_opened(result: dict):
+            self.MODEL = model.Model(
+                result["project_name"],
+                result["project_path"],
+                self.editor_screen
+            )
+            self.push_screen("editor")
+        self.push_screen("welcome", callback=on_project_opened)
 
     def action_quit(self):
         if not hasattr(self, "MODEL"):
             self.exit()
         def handle_modal_result(result: dict):
             if result["pressed_button"] == "Yes":
+                # noinspection PyUnresolvedReferences
+                self.screen.action_save_file()
                 if result["checkbox"]["save_config"]["value"]:
-                    self.app.MODEL.plugins_save_configs()
+                    # noinspection PyTypeChecker
+                    self.editor_screen.sig_save_config_directive.emit()
                 self.exit()
         # Push the screen with the configuration and callback
         self.app.push_screen(
@@ -448,6 +492,5 @@ class Main(App):
 
 
 if __name__ == "__main__":
-    import textual.events
     app = Main()
     app.run()
