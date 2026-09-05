@@ -1,10 +1,12 @@
 import math
 from typing import TypedDict, Optional
+from core.engine import RuleSet
+from lang.implementation import BaseRule
 
 
 class RuleSetData(TypedDict):
-    Index: int
-    QCode: str
+    Index: int  # -1 in case we generate a ruleset without knowing the index (from_rf_ruleset)
+    QCode: str  # '' in case we generate a ruleset without knowing the index (from_rf_ruleset)
     RuleSet: list[tuple[tuple[int, ...], tuple[int, ...]]]
     Weight: int
 
@@ -51,7 +53,39 @@ def from_reduced_rank_quinary_code(qcode: str) -> RuleSetData:
     }
 
 
-def from_reduced_rank_index(index: int) -> RuleSetData:
+def from_rf_ruleset(ruleset: RuleSet) -> RuleSetData:
+    """
+    Converts a core engine RuleSet object into a RuleSetData dictionary.
+    Extracts the match and target sequences from the BaseRule selectors and targets.
+    """
+    extracted_rules = []
+
+    for rule in ruleset.rules:
+        rule: BaseRule
+        match_seq = ()
+        target_seq = ()
+        if rule.selector:
+            first_selector = rule.selector[0]
+            if first_selector.type in ('literal', 'regex'):
+                # noinspection bad-argument-type
+                match_seq = tuple(first_selector.selector)
+        if rule.target:
+            first_target = rule.target[0]
+            if first_target.type == 'literal':
+                # noinspection bad-argument-type
+                target_seq = tuple(first_target.target)
+
+        extracted_rules.append((match_seq, target_seq))
+
+    return {
+        "Index": -1,
+        "QCode": '',
+        "RuleSet": extracted_rules,
+        "Weight": rule_weight(extracted_rules)  # Assuming this is available in the module scope
+    }
+
+
+def index_to_qcode(index: int) -> str:
     if index < 1: raise ValueError("Index must be >= 1")
     n = math.floor(round(math.log(4 * index - 3, 5), 10))
     j = index - (5 ** n + 3) // 4
@@ -63,7 +97,7 @@ def from_reduced_rank_index(index: int) -> RuleSetData:
             qcode = str(temp % 5) + qcode
             temp //= 5
 
-    return from_reduced_rank_quinary_code(qcode)
+    return qcode
 
 
 def _drop_end(s: str, tail: int) -> str:

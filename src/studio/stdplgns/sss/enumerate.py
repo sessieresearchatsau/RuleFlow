@@ -1,10 +1,12 @@
 """
 This plugin provides Sessie-specific research code and batch enumeration capabilities via declarative YAML configs.
 """
+# Helpers
 import yaml
 import csv
 from typing import Iterator
 
+# Libs
 from textual.widgets import Collapsible, TabPane, Input, Button, ProgressBar, Label, RichLog, DataTable, SelectionList, Checkbox
 from textual.widgets.selection_list import Selection
 from textual.containers import ScrollableContainer
@@ -12,10 +14,11 @@ from textual.widget import Widget
 from textual.worker import Worker, get_current_worker
 from textual import events
 
+# Src
 from studio.model import Plugin
 from studio.stdplgns.sss._pipeline import run_sessie_enumeration
-from studio.stdplgns.sss._ruleset_tests import from_reduced_rank_index
-from core.topologies.tooling.rff_encoding import chr_rff
+from studio.stdplgns.sss._ruleset_tests import RuleSetData
+from studio.stdplgns.sss._pipeline import ruleset_to_flow_code
 
 
 # noinspection DuplicatedCode
@@ -54,7 +57,7 @@ class P(Plugin):
             ("Steps", "steps", False),
             ("Classification", "classification", False),
             ("Status/Jump Reason", "status", True),
-            ("Rules", "rules", False),
+            ("Rules", "rules_str", True),
         ]
 
     def controls(self) -> Iterator[Widget]:
@@ -100,7 +103,7 @@ class P(Plugin):
             yield self.export_filename
 
             self.export_index = Input(placeholder="Index to Export (e.g. 42)", type="integer")
-            self.export_index.border_title = "Target Index"
+            self.export_index.border_title = "Export Index"
             yield self.export_index
 
             yield Button("Export Index to .flow", id="btn-export-flow", variant="success")
@@ -253,6 +256,7 @@ class P(Plugin):
             self.view.app.notify("Please enter an Index to export.", severity="warning")
             return
 
+        workflow_config: dict = yaml.safe_load(self.view.code_editor_text_area.text)
         idx = int(idx_val)
         filename_input = self.export_filename.value.strip()
 
@@ -270,22 +274,10 @@ class P(Plugin):
             export_path = self.model.project_path.joinpath(filename)
 
         try:
-            rs_data = from_reduced_rank_index(idx)
+            rs_data: RuleSetData = self._all_results[idx]['ruleset']
             flow_code = f"// Auto-exported SSS System\n"
             flow_code += f"// Index: {rs_data['Index']} | Q-Code: {rs_data['QCode']}\n\n"
-            flow_code += '@init("A");\n'
-
-            for match, replace in rs_data["RuleSet"]:
-                m_str = "".join(chr_rff(c) for c in match) if match else ''
-                r_str = "".join(chr_rff(c) for c in replace) if replace else ''
-                if not m_str and not r_str:
-                    continue
-                elif not m_str:
-                    flow_code += f"> {r_str};\n"
-                elif not r_str:
-                    flow_code += f"{m_str} >< ;\n"
-                else:
-                    flow_code += f"{m_str} -> {r_str};\n"
+            flow_code += ruleset_to_flow_code(workflow_config.get('initial_state', 'A'), rs_data['RuleSet'])
 
             with open(export_path, 'w') as f:
                 f.write(flow_code)
@@ -324,8 +316,17 @@ class P(Plugin):
         def ui_progress(pct: float):
             self.cft(self.progress_bar.update, progress=pct)
 
-        def ui_result(idx: int, qcode: str, rules: str, steps: int, cls: str, status: str):
-            row_data = {"index": idx, "qcode": qcode, "rules": rules, "steps": steps, "classification": cls, "status": status}
+        def ui_result(ruleset: RuleSetData, ruleset_str: str, steps: int, cls: str, status: str):
+            idx: int = ruleset['Index']
+            row_data = {
+                "ruleset": ruleset,
+                "index": idx,
+                "qcode": ruleset['QCode'],
+                "rules_str": ruleset_str,
+                "steps": steps,
+                "classification": cls,
+                "status": status
+            }
             self._all_results.append(row_data)
 
             def _update_ui():
