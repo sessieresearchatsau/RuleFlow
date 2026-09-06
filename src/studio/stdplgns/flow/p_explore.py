@@ -24,7 +24,7 @@ from rich.table import Table as RichTable
 from typing import Iterator, Sequence
 from core.engine import Event as FlowEvent, Cell as FlowCell, Coordinate as SpaceCoordinate
 from core.topologies.nd_space import SpaceState1D as SpaceState
-from core.topologies.tooling.prettier import SpaceState1DFormatter
+from analysis import SpaceState1DFormatter
 from core.topologies.tooling.rff_encoding import ord_rff, chr_rff
 from core.signals import Signal
 from lang.implementation import BaseRule

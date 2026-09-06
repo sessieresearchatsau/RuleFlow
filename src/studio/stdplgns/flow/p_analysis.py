@@ -12,7 +12,7 @@ from textual.widgets.selection_list import Selection
 from typing import Iterator
 from studio.model import Plugin
 from lang.interpreter import FlowLang
-from analysis.causal_graph import EventCausalityGraph
+from analysis import EventCausalityGraph
 from core.numlib import str_to_num, INF
 from studio.config import USER_DATA_DIR_PATH
 from pyvis.network import Network

@@ -48,7 +48,7 @@ if __name__ == "__main__":
     print(system.__str__())
 
     # Evolution Table
-    from core.topologies.tooling.prettier import SpaceState1DFormatter
+    from analysis.prettier import SpaceState1DFormatter
     from rich.console import Console
     formatter = SpaceState1DFormatter()
     formatter.show_symbols = True

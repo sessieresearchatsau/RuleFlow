@@ -1,11 +1,10 @@
 """
-prettier.py
 Rich-based visualization wrapper for the Flow engine's SpaceState.
 
 TODO:
 - Add options for Nd rendering.
 """
-from typing import Iterator, Iterable, Literal, Sequence
+from typing import Iterable, Literal, Sequence
 from rich.text import Text, Span, Style
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.tooling.rff_encoding import chr_rff

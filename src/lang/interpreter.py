@@ -335,11 +335,6 @@ class FlowLang(FlowLangBase):
 
 
 if __name__ == "__main__":
-    from pprint import pprint
-    import psutil
-    import os
-    import gc
-    import timeit
 
     code = """
 # initial state
@@ -352,7 +347,7 @@ if __name__ == "__main__":
 """
 
     # Evolution Table Rendering
-    from core.topologies.tooling.prettier import SpaceState1DFormatter
+    from analysis.prettier import SpaceState1DFormatter
     from rich.console import Console
     formatter = SpaceState1DFormatter()
     formatter.base_style = 'black'
