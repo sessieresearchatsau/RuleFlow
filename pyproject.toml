@@ -1,7 +1,7 @@
 [project]
 name = "ruleflow"
-version = "0.1.0"
-description = "A python framework implementing the Sessie algorithms and Causal Network analysis tools."
+version = "1.0.0"
+description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 requires-python = ">=3.14"
 dependencies = [
     "matplotlib",
