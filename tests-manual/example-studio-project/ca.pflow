@@ -1,0 +1,10 @@
+char = args[0]
+index = args[1]
+patterns = [
+    (1, 1, 1), (1, 1, 0), (1, 0, 1), (1, 0, 0),
+    (0, 1, 1), (0, 1, 0), (0, 0, 1), (0, 0, 0)
+]
+for (b1, b2, b3), tb in zip(patterns, f'{index:08b}'):
+    ---
+    {char[b1]}{char[b2]}{char[b3]} --> .{char[int(tb)]};
+    ---

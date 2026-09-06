@@ -36,7 +36,9 @@ def bootstrapped_py_parse(src: str, *args: Any, **kwargs: Any) -> dict[str, Any]
 if __name__ == "__main__":
     from pprint import pprint
     pprint(bootstrapped_py_parse("""
----
--a[{args[0]}]
----
-""", 0))
+factor = args[0]
+for i in range(2):
+    ---
+    "{i * factor}" -> "X";
+    ---
+""", 1))

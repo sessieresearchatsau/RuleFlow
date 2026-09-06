@@ -1,0 +1,30 @@
+[
+  {
+    "time": 0,
+    "inert": false,
+    "causal_distance": 0,
+    "causally_connected": [],
+    "spaces": [[0, 0, 1, 0, 0]]
+  },
+  {
+    "time": 1,
+    "inert": false,
+    "causal_distance": 1,
+    "causally_connected": [0, 0, 0],
+    "spaces": [[0, 1, 0, 1, 0]]
+  },
+  {
+    "time": 2,
+    "inert": false,
+    "causal_distance": 2,
+    "causally_connected": [1, 1, 1, 1],
+    "spaces": [[1, 0, 0, 0, 1]]
+  },
+  {
+    "time": 3,
+    "inert": false,
+    "causal_distance": 3,
+    "causally_connected": [2, 2, 2, 2],
+    "spaces": [[0, 1, 0, 1, 0]]
+  }
+]

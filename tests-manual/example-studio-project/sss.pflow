@@ -1,0 +1,59 @@
+import math
+
+charset: str = args[0]
+index: int = args[1]
+if index < 0: raise ValueError("Index must be non-negative.")
+i = index + 1  # The algorithm uses 1-based indexing
+
+# Use round() to avoid floating-point inaccuracies with math.log for exact powers of 5
+n = math.floor(round(math.log(4 * i - 3, 5), 10))
+j = i - (5**n + 3) // 4
+
+# Extract base-5 digits
+quinary_digits = []
+temp_j = j
+for _ in range(n):
+    quinary_digits.append(temp_j % 5)
+    temp_j //= 5
+quinary_digits.reverse()
+
+# RSS Construction
+ans = [[1]]
+for digit in quinary_digits:
+    if digit == 0: ans.extend([[], [], [1]])
+    elif digit == 1: ans.extend([[], [1]])
+    elif digit == 2: ans.append([1])
+    elif digit == 3: ans[-1].append(1)
+    elif digit == 4:
+        ans[-1][-1] += 1
+
+max_weight = max((max(s) for s in ans if s), default=0)
+if max_weight > len(charset): raise ValueError(f"Index {index} requires a charset of at least {max_weight} characters.")
+
+strings = []
+for s_weights in ans:
+    s = "".join(charset[w - 1] for w in s_weights)
+    strings.append(s)
+
+if len(strings) % 2 != 0: strings.append("")
+
+# Emit the correct FlowLang instructions
+for k in range(0, len(strings), 2):
+    left = strings[k]
+    right = strings[k + 1]
+    
+    if not left and not right:
+        # Skips identity "" -> "" rules if they ever manage to sneak through
+        continue 
+    elif not left:
+        ---
+        [0] > {right};
+        ---
+    elif not right:
+        ---
+        {left} >< ;
+        ---
+    else:
+        ---
+        {left} -> {right};
+        ---

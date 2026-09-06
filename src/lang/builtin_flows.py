@@ -1,5 +1,5 @@
 PRESETS: dict[str, str] = {
-    'stat.ca.preset': """
+    '/lang/ca.preset': """
 @self.regex_searcher.set_find_args(overlapped=True);
 @self.literal_searcher.set_overlapping_mode(True);
 @compress(0);
@@ -7,14 +7,14 @@ PRESETS: dict[str, str] = {
 -pl[inf] -mr[0,inf]
 """,  # default import code to streamline the use of CAs in the 0th group.
 
-    'stat.global_multiway.preset': """
+    '/lang/global_multiway.preset': """
 -gb[false]
 -sr[0, inf]
 -mr[0, inf]
 -bl[inf]
 """,  # search buffer becomes "corrupt" after edits, so disable.
 
-    'stat.ordered_multiway.preset': """
+    '/lang/ordered_multiway.preset': """
 -gb[true]
 -sr[0, inf]
 -mr[0, inf]
@@ -24,7 +24,7 @@ PRESETS: dict[str, str] = {
 
 FLOWS: dict[str, str] = {
     # ==== Wolfram Numbering Scheme Ruleset Enumeration ====
-    'stat.eca.pflow': """
+    '/lang/eca.pflow': """
 charset: str = args[0]
 if len(charset) != 2:
     raise ValueError("Charset must contain exactly 2 characters.")
@@ -33,15 +33,14 @@ binary_patterns: list[tuple[int, int, int]] = [
     (1, 1, 1), (1, 1, 0), (1, 0, 1), (1, 0, 0),
     (0, 1, 1), (0, 1, 0), (0, 0, 1), (0, 0, 0)
 ]
-rule_bits = f'{index:08b}'
-for (b1, b2, b3), result_bit in zip(binary_patterns, rule_bits):
+for (b1, b2, b3), tb in zip(binary_patterns, f'{index:08b}'):
     ---
-    {charset[b1]}{charset[b2]}{charset[b3]} --> .{charset[int(result_bit)]};
+    {charset[b1]}{charset[b2]}{charset[b3]} --> .{charset[int(tb)]};
     ---
 """,
 
-    # ==== Totalistic Cellular Automata Enumeration ====  NOTE: this needs a lot of testing...
-    'stat.tca.pflow': """
+    # ==== Totalistic Cellular Automata Enumeration ====  TODO: this needs a lot of testing...
+    '/lang/tca.pflow': """
 import itertools
 
 charset: str = args[0]
@@ -81,67 +80,6 @@ for p in itertools.product(range(k), repeat=neighborhood_size):
 
     ---
     {pattern_str} --> {left_padding}{target_char};
-    ---
-""",
-
-    # TODO: all Sessie code should be removed to dedicated files.
-    # ==== Reduced Sessie Enumeration ====
-    # Generates the Sequential Substitution System (SSS) ruleset for a given index
-    # using the Reduced Sessie Enumeration (RSS) algorithm described in the
-    # 'An Improved Generalized Enumeration of Substitution Systems' paper.
-    #
-    # The RSS algorithm provides a bijective mapping between positive integers
-    # and SSS rulesets. It uses a base-5 (quinary) encoding to construct rulesets
-    # by iteratively modifying a base state.
-    'rss.pflow': """
-import math
-charset: str = args[0]
-index: int = args[1]
-if index < 0:
-    raise ValueError("Index must be non-negative.")
-
-# The algorithm uses 1-based indexing
-i = index + 1
-
-# Calculate 'n' and 'j' based on the quinary mapping
-n = math.floor(math.log(4 * i - 3, 5))
-j = i - (5**n + 3) // 4
-
-# Extract base-5 digits
-quinary_digits = []
-temp_j = j
-for _ in range(n):
-    quinary_digits.append(temp_j % 5)
-    temp_j //= 5
-quinary_digits.reverse()
-
-# RSS Construction
-ans = [[1]]
-for digit in quinary_digits:
-    if digit == 0:
-        ans.extend([[], [], [1]])
-    elif digit == 1:
-        ans.extend([[], [1]])
-    elif digit == 2:
-        ans.append([1])
-    elif digit == 3:
-        ans[-1].append(1)
-    elif digit == 4:
-        if not ans or not ans[-1]:
-            ans.append([1])
-        ans[-1][-1] += 1
-max_weight = max((max(s) for s in ans if s), default=0)
-if max_weight > len(charset):
-    raise ValueError(f"Index {index} requires a charset of at least {max_weight} characters.")
-strings = []
-for s_weights in ans:
-    s = "".join(charset[w - 1] for w in s_weights)
-    strings.append(s)
-if len(strings) % 2 != 0:
-    strings.append("")
-for k in range(0, len(strings), 2):
-    ---
-    {strings[k]} -> {strings[k + 1]};
     ---
 """
 }

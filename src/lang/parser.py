@@ -200,11 +200,14 @@ class FlowLangTransformer(Transformer):
         return {"type": "regex", "value": items[0].value[1:-1].encode()}
 
     def literal_term(self, items):
-        evaluated: Any = eval(items[0].value)
-        if isinstance(evaluated, Sequence):
-            value: tuple[int, ...] = tuple[int](ord(i) if isinstance(i, str) else i for i in evaluated)
+        if items[0] is None:
+            value = ()
         else:
-            value: tuple[int, ...] = (ord(evaluated) if isinstance(evaluated, str) else evaluated,)
+            evaluated: Any = eval(items[0].value)
+            if isinstance(evaluated, Sequence):
+                value: tuple[int, ...] = tuple[int](ord(i) if isinstance(i, str) else i for i in evaluated)
+            else:
+                value: tuple[int, ...] = (ord(evaluated) if isinstance(evaluated, str) else evaluated,)
         return {
             "type": "literal",
             "value": value
@@ -226,6 +229,8 @@ class FlowLangTransformer(Transformer):
         parts = content.split(',')
         if len(parts) == 1:
             start = parse_part(parts[0])
+            if start is None:
+                start = 0
             end = start
         else:  # this will be the case: len(parts) == 2
             start = parse_part(parts[0])
@@ -319,23 +324,7 @@ if __name__ == "__main__":
     from pprint import pprint
     parser = FlowLangParser(True)
     t = parser.parse(r'''
-@macro("stat.ca.preset");
-@test(1, "12", (2,2), k=2);
-@test2.all()[0].yup(1, 2, 3);
--test[slice(1, 1, 1)]
-(-a -j[2])(
-    "AAB" AB -> ABA;
-    fn<1, 2> -> (1, 2, 3, "A") -ttt;
-    [0, 4] --> AB;
-    [0] > AB;
-    (1, 2, -3, 4) --> AB;
-)
-(1, 2) ->;
-# This is an example of a single line comment!
-"""
-This is an example of multiline comment.
-It is a cool feature!
-"""
+"AAB" AB -> ABA CBA (1, 2);
     ''')
 
 #     t = parser.parse(r'''

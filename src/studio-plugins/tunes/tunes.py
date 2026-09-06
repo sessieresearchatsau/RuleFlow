@@ -301,7 +301,7 @@ class P(Plugin):
                 try:
                     # Extract the first space from the multi-way branches for deterministic music
                     space = next(event.spaces)
-                    cells = list(space.get_all_cells())
+                    cells = list(space.topology.as_cells)
                 except StopIteration:
                     continue
 

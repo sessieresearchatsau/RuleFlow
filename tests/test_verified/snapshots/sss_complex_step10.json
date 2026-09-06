@@ -1,0 +1,184 @@
+[
+  {
+    "time": 0,
+    "inert": false,
+    "causal_distance": 0,
+    "causally_connected": [],
+    "spaces": [
+      [
+        65,
+        66
+      ]
+    ]
+  },
+  {
+    "time": 1,
+    "inert": false,
+    "causal_distance": 1,
+    "causally_connected": [
+      0
+    ],
+    "spaces": [
+      [
+        65,
+        65,
+        65,
+        66
+      ]
+    ]
+  },
+  {
+    "time": 2,
+    "inert": false,
+    "causal_distance": 1,
+    "causally_connected": [
+      0,
+      1,
+      1,
+      1
+    ],
+    "spaces": [
+      [
+        66,
+        65,
+        65
+      ]
+    ]
+  },
+  {
+    "time": 3,
+    "inert": false,
+    "causal_distance": 2,
+    "causally_connected": [
+      2
+    ],
+    "spaces": [
+      [
+        65,
+        65,
+        66,
+        65,
+        65
+      ]
+    ]
+  },
+  {
+    "time": 4,
+    "inert": false,
+    "causal_distance": 3,
+    "causally_connected": [
+      3
+    ],
+    "spaces": [
+      [
+        65,
+        65,
+        65,
+        65,
+        66,
+        65,
+        65
+      ]
+    ]
+  },
+  {
+    "time": 5,
+    "inert": false,
+    "causal_distance": 3,
+    "causally_connected": [
+      3,
+      4,
+      4,
+      4
+    ],
+    "spaces": [
+      [
+        65,
+        66,
+        65,
+        65,
+        65,
+        65
+      ]
+    ]
+  },
+  {
+    "time": 6,
+    "inert": false,
+    "causal_distance": 2,
+    "causally_connected": [
+      5,
+      5,
+      2
+    ],
+    "spaces": [
+      [
+        65,
+        66,
+        66,
+        66,
+        65
+      ]
+    ]
+  },
+  {
+    "time": 7,
+    "inert": false,
+    "causal_distance": 2,
+    "causally_connected": [
+      2
+    ],
+    "spaces": [
+      [
+        65,
+        66,
+        66,
+        66,
+        66,
+        66
+      ]
+    ]
+  },
+  {
+    "time": 8,
+    "inert": false,
+    "causal_distance": 4,
+    "causally_connected": [
+      5
+    ],
+    "spaces": [
+      [
+        65,
+        65,
+        65,
+        66,
+        66,
+        66,
+        66,
+        66
+      ]
+    ]
+  },
+  {
+    "time": 9,
+    "inert": false,
+    "causal_distance": 3,
+    "causally_connected": [
+      3,
+      8,
+      8,
+      8
+    ],
+    "spaces": [
+      [
+        66,
+        65,
+        65,
+        66,
+        66,
+        66,
+        66
+      ]
+    ]
+  }
+]

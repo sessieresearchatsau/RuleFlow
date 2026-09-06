@@ -1,0 +1,9 @@
+# initial state
+@init("A" * 10 + "B" + 10 * "A");
+
+# define the rules
+@macro("/lang/ca.preset");
+@macro("/lang/eca.pflow", "AB", 30);
+
+# run n times
+@evolve(9);
