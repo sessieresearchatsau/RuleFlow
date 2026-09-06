@@ -1,12 +1,13 @@
 # initial state
-@init("A" * 15 + "B" + 15 * "A");
+@init("A" * 2 + "B" + 2 * "A");
 
 # define the rules
--p_rule[0.75]
 @macro("stat.ca.preset");
 @macro("stat.eca.pflow", "AB", 30);
+[0] -> A;
+[inf] -> A;
 
 # run n times
 # @p_seed(0);
-@clear();
-@evolve(40);
+#@clear();
+@evolve(20);

@@ -3,3 +3,4 @@ or cellular automata. It uses the core tools and constructs (strictly) to provid
 A system inherits from the Flow object and utilizes all the various constructs such RuleMatches and Cells to
 achieve desired behavior.
 """
+from implementations.sss import SSS
