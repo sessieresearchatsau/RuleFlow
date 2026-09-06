@@ -47,9 +47,9 @@ class Model:
                     self.plugins.append(obj(self, view))
 
         # add builtin plugins
-        from studio.stdplgns.flow import execute, explore, analysis
-        from studio.stdplgns.sss import enumerate as sss_enumerate
-        for module in (execute, explore, analysis, sss_enumerate):
+        from studio.stdplgns.flow import p_execute, p_explore, p_analysis
+        from studio.stdplgns.sss import p_enumerate as p_sss_enumerate
+        for module in (p_execute, p_explore, p_analysis, p_sss_enumerate):
             grab_plugins(module)
 
         # load all plugins classes
