@@ -5,9 +5,9 @@ from typing import Callable, Any, Sequence
 import random
 
 # flow imports
-from core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
-from core.topologies.nd_space import SpaceState1D
-from core.engine import Event
+from ruleflow.core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
+from ruleflow.core.topologies.nd_space import SpaceState1D
+from ruleflow.core.engine import Event
 
 
 @pytest.fixture

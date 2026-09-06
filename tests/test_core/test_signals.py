@@ -1,4 +1,4 @@
-from core.signals import Signal
+from ruleflow.core.signals import Signal
 
 
 def test_signal_connection_and_emission():

@@ -1,10 +1,9 @@
 import pytest
 import random
-import numpy as np
 
-from core.engine import RuleMatch, DeltaCell
-from core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
-from lang.implementation import (
+from ruleflow.core.engine import RuleMatch, DeltaCell
+from ruleflow.core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
+from ruleflow.lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
 
@@ -112,7 +111,7 @@ def test_aggregate_delta_cells():
     """
     Tests the static helper function that aggregates many DeltaCells into a single DeltaCell.
     """
-    from core.engine import Cell
+    from src.ruleflow.core.engine import Cell
 
     dc1 = DeltaCell(destroyed_cells=[Cell(65, 0, 0)], new_cells=[Cell(66, 1, 1)])
     dc2 = DeltaCell(destroyed_cells=[Cell(67, 0, 2)], new_cells=[Cell(68, 1, 3)])

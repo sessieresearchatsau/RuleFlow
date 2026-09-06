@@ -1,5 +1,4 @@
-import pytest
-from lang.interpreter import FlowLang
+from ruleflow.lang.interpreter import FlowLang
 
 
 def test_flowlang_eca(snapshot_loader, serialize_flow_events):

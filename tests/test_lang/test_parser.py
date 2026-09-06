@@ -1,6 +1,5 @@
-import pytest
-from core.numlib import INF
-from lang.parser import parse, parse_callable_args
+from ruleflow.core.numlib import INF
+from ruleflow.lang.parser import parse, parse_callable_args
 
 
 # ================ Exhaustive Grammar Test ================

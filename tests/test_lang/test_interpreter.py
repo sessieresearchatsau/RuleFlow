@@ -1,8 +1,5 @@
-import pytest
-import numpy as np
-
-from lang.interpreter import Interpreter, FlowLang
-from lang.implementation import SubstitutionRule, OverwriteRule, Selector, Target
+from ruleflow.lang.interpreter import Interpreter, FlowLang
+from ruleflow.lang.implementation import SubstitutionRule, OverwriteRule, Selector, Target
 
 
 # ================ Interpreter Data Mapping ================
@@ -115,7 +112,7 @@ def test_flowlang_merge_and_compress_directives(base_rule_dependencies):
     rule1 = OverwriteRule([Selector("literal", (65,))], [Target("literal", (65,))], *base_rule_dependencies)
     rule2 = OverwriteRule([Selector("literal", (66,))], [Target("literal", (67,))], *base_rule_dependencies)
 
-    from core.engine import RuleSet
+    from ruleflow.core.engine import RuleSet
     flow.set_ruleset(RuleSet([rule1, rule2]))
 
     # Execute merge logic to link rules.

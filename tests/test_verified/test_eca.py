@@ -1,5 +1,4 @@
-import pytest
-from implementations.eca import ECA
+from ruleflow.implementations import ECA
 
 
 def test_eca_rule_90_snapshot_verification(snapshot_loader, serialize_flow_events):

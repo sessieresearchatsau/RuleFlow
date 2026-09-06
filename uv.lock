@@ -1224,7 +1224,7 @@ wheels = [
 
 [[package]]
 name = "ruleflow"
-version = "0.1.0"
+version = "1.0.2"
 source = { virtual = "." }
 dependencies = [
     { name = "hypothesis" },
@@ -1264,9 +1264,6 @@ requires-dist = [
     { name = "wcwidth", specifier = "==0.8.3" },
     { name = "wolframclient" },
 ]
-
-[package.metadata.requires-dev]
-dev = []
 
 [[package]]
 name = "six"

@@ -1,5 +1,4 @@
-import pytest
-from core.engine import (
+from ruleflow.core.engine import (
     Flow, Event, DeltaSpace, DeltaCell, Coordinate,
     RuleSet, Rule, RuleMatch
 )

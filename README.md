@@ -168,8 +168,8 @@ Do[
 Every state transformation retains the exact indexes of the generations that gave rise to it. Using `EventCausalityGraph`, users can convert live simulations into NetworkX `MultiDiGraph` structures or interactive VisJS visualizations:
 
 ```python
-from lang.interpreter import FlowLang
-from analysis import EventCausalityGraph
+from ruleflow.lang import FlowLang
+from ruleflow.analysis import EventCausalityGraph
 import networkx as nx
 
 flow = FlowLang()
@@ -214,8 +214,9 @@ Studio is designed to encourage research-oriented tooling rather than imposing r
 from typing import Iterator
 from textual.widgets import TabPane, Button, RichLog
 from textual.widget import Widget
-from studio.model import Plugin
-from lang.interpreter import FlowLang
+from ruleflow.studio.model import Plugin
+from ruleflow.lang import FlowLang
+
 
 class P(Plugin):
     name = "Metrics Counter"

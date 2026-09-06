@@ -1,11 +1,10 @@
-import pytest
 import copy
 import numpy as np
 from hypothesis import given, strategies as st
 
 # flow imports
-from core.topologies.vector import Vector, CellVector
-from core.topologies.tooling.searcher import VectorSearch
+from ruleflow.core.topologies.vector import Vector, CellVector
+from ruleflow.core.topologies.tooling.searcher import VectorSearch
 
 
 @given(

@@ -1,5 +1,4 @@
-import pytest
-from implementations.sss import SSS
+from ruleflow.implementations.sss import SSS
 
 
 def test_sss_system_snapshot_verification(snapshot_loader, serialize_flow_events):

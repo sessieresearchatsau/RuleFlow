@@ -1,5 +1,5 @@
 import pytest
-from core.numlib import INF, NEG_INF, str_to_num, is_infinity
+from ruleflow.core.numlib import INF, NEG_INF, str_to_num, is_infinity
 
 
 def test_inf_comparisons():

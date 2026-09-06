@@ -1,5 +1,4 @@
-import pytest
-from core.topologies.nd_space import SpaceState1D
+from ruleflow.core.topologies.nd_space import SpaceState1D
 
 
 def test_space_state_substitute(space_1d_factory):
