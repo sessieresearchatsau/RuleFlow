@@ -12,19 +12,25 @@ prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
 from typing import cast, Iterable
+from textual import events
+from textual.css.query import NoMatches
 from textual.app import App, ComposeResult
-from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
+from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer, HorizontalGroup
 from textual.screen import Screen, ModalScreen
+from textual.widget import Widget
 from textual.widgets import (
-    DirectoryTree as _DirectoryTree, TextArea as _TextArea, Button, Label,
+    DirectoryTree as _DirectoryTree, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input, SelectionList,
-    Footer, ContentSwitcher, Static, Checkbox
+    Footer, ContentSwitcher, Static, Checkbox, RadioSet
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
+
 from studio import config
 from studio import model
 from core.signals import Signal  # we don't use Textual builtin signal system due to limitation with widget mounting being required first.
+from lang import parser as flowlang_parser
+import re
 
 
 LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
@@ -47,69 +53,8 @@ class DirectoryTree(_DirectoryTree):
         for path in paths:
             if str(path.stem) == 'plugins' or str(path).endswith("__") or str(path).startswith("__"):
                 continue
-            if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
+            if path.is_dir() or not any(map(path.match, config.HIDDEN_FILE_PATTERNS)):
                 yield path
-
-
-class TextArea(_TextArea):
-    def load_text(self, text: str | None) -> None:
-        """Overrides the load_text method so that placeholders work properly..."""
-        # NOTE: edit history is cleared
-        if text is None:
-            super().load_text("")
-            self.disabled = True
-            self.placeholder = "// Select a .flow file to begin..."
-            return
-        if self.disabled: self.disabled = False
-        super().load_text(text)
-        self.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
-
-
-# import re
-# class CustomHighlightTextArea(TextArea):
-#     # 1. Define your custom highlighting rules as (regex_pattern, highlight_name)
-#     # The 'highlight_name' should match standard names used in Textual themes
-#     # (e.g., "keyword", "string", "comment", "number", "variable", "function").
-#     HIGHLIGHT_RULES = [
-#         (r"\b(def|class|return|if|else|elif|import|from)\b", "keyword"),
-#         (r'".*?"|\'.*?\'', "string"),
-#         (r"#.*", "comment"),
-#         (r"\b\d+\b", "number"),
-#         (r"\b[A-Z][a-zA-Z0-9_]*\b", "type"),  # Class names
-#     ]
-#
-#     def on_mount(self) -> None:
-#         # Pre-compile the regexes for performance when the widget mounts
-#         self._compiled_rules = [
-#             (re.compile(pattern), name)
-#             for pattern, name in self.HIGHLIGHT_RULES
-#         ]
-#
-#     def _build_highlight_map(self) -> None:
-#         """Override to apply custom regex-based highlights instead of tree-sitter."""
-#
-#         # 1. Clear the existing line cache and highlight map
-#         self._line_cache.clear()
-#         self._highlights.clear()
-#
-#         # 2. Iterate over every line in the document
-#         for line_index in range(self.document.line_count):
-#             line_text = self.document[line_index]
-#
-#             # 3. Apply each regex rule to the current line
-#             for regex, highlight_name in self._compiled_rules:
-#                 for match in regex.finditer(line_text):
-#                     # 4. CRITICAL: Convert Python's character indices to byte offsets.
-#                     # Textual's `_render_line` expects byte offsets because that is
-#                     # what Tree-sitter natively outputs.
-#                     start_char, end_char = match.span()
-#                     start_byte = len(line_text[:start_char].encode("utf-8"))
-#                     end_byte = len(line_text[:end_char].encode("utf-8"))
-#
-#                     # 5. Append the highlight tuple for this line
-#                     self._highlights[line_index].append(
-#                         (start_byte, end_byte, highlight_name)
-#                     )
 
 
 class ModalDialog(ModalScreen[dict]):
@@ -120,8 +65,8 @@ class ModalDialog(ModalScreen[dict]):
 
     def __init__(self,
                  title: str,
-                 fields: list[dict] = None,
-                 buttons: list[str] = None):
+                 fields: list[dict] | None = None,
+                 buttons: list[str] | None = None):
         super().__init__()
         self.title_text = title
         self.fields_config = fields or []
@@ -181,8 +126,7 @@ class ModalDialog(ModalScreen[dict]):
         self.dismiss(results)
 
     def on_input_submitted(self):
-        # noinspection PyUnresolvedReferences
-        self.query_one("#modal-dialog-submit-btn").press()
+        self.query_one("#modal-dialog-submit-btn").press()  # type: ignore
 
 
 class WelcomeScreen(Screen):
@@ -222,7 +166,6 @@ class WelcomeScreen(Screen):
                 self.notify('Please enter a valid path to a directory.', severity='error')
                 return
             try:
-                # noinspection PyUnresolvedReferences
                 self.query_one("#recents-list").add_option(Option(f'{name} [grey]({path})[/grey]', name))
                 config.RecentProjects.add(name, path)
                 self.notify(f"Loaded project at: {path}")
@@ -277,115 +220,168 @@ class WelcomeScreen(Screen):
             self.notify('There is no selection to remove!', severity='warning')
 
 
-# noinspection PyTypeChecker
-# noinspection PyUnresolvedReferences
-class EditorScreen(Screen):
-    """
-    The main IDE interface matching Image 2 with dynamic sidebar logic.
-    """
+class HorizontalSplitter(Widget):
+    """A custom widget to handle click-and-drag vertical resizing."""
+
+    DEFAULT_CSS = """
+        HorizontalSplitter {
+            height: 1;
+            width: 100%;
+            color: $text-disabled;
+            background: transparent;
+            content-align: center middle;
+        }
+        HorizontalSplitter:hover {
+            color: $text;
+            background: $boost;
+        }
+        """
+
+    def render(self) -> str:
+        """Renders a horizontal grip line in the center."""
+        return "" if self.is_dragging else "⋯"
+
+    def __init__(self, target_id: str, reverse: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_id = target_id
+        self.reverse = reverse
+        self.is_dragging = False
+        self.start_y = 0
+        self.start_height = 0
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        try:
+            target = self.parent.query_one(f"#{self.target_id}")
+            self.start_height = target.region.height
+            self.start_y = event.screen_y
+            self.is_dragging = True
+            self.capture_mouse()
+            event.stop()
+        except NoMatches:
+            pass
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if self.is_dragging:
+            try:
+                target = self.parent.query_one(f"#{self.target_id}")
+                delta_y = event.screen_y - self.start_y
+
+                # If target is below the splitter, dragging UP (negative delta) increases height
+                if self.reverse:
+                    new_height = self.start_height - delta_y
+                else:
+                    new_height = self.start_height + delta_y
+
+                # Impose boundaries (e.g., minimum 5 rows, maximum 40 rows)
+                new_height = max(5, min(new_height, 40))
+
+                target.styles.height = new_height
+            except NoMatches:
+                pass
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        if self.is_dragging:
+            self.release_mouse()
+            self.is_dragging = False
+
+
+class VerticalSplitter(Widget):
+    """A custom widget to handle click-and-drag resizing of adjacent containers."""
+    DEFAULT_CSS = """
+        VerticalSplitter {
+            width: 1;
+            height: 100%;
+            color: $text-disabled; /* Greys out the grip lines */
+            background: transparent;
+            content-align: center middle; /* Centers the grip character */
+        }
+        VerticalSplitter:hover {
+            color: $text; /* Brightens the grip */
+            background: $boost; /* Adds a very subtle, soft background highlight */
+        }
+        """
+
+    def render(self) -> str:
+        """Renders a vertical grip line in the center."""
+        return "" if self.is_dragging else "⋮"
+
+    def __init__(self, target_id: str, reverse: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_id = target_id
+        self.reverse = reverse          # If the target is on the right of the splitter, we need to reverse the math
+        self.is_dragging = False
+        self.start_x = 0
+        self.start_width = 0
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Triggered when the user clicks the splitter."""
+        try:
+            # self.parent ensures we grab the container strictly in the current layout scope
+            target = self.parent.query_one(f"#{self.target_id}")
+            self.start_width = target.region.width
+            self.start_x = event.screen_x
+            self.is_dragging = True
+            self.capture_mouse()
+            event.stop()
+        except NoMatches:
+            pass
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        """Triggered when the user drags the mouse."""
+        if self.is_dragging:
+            try:
+                target = self.parent.query_one(f"#{self.target_id}")
+                if not target.display:
+                    target.display = True
+                delta_x = event.screen_x - self.start_x
+
+                # Calculate new width based on which side the target is on
+                if self.reverse:
+                    new_width = self.start_width - delta_x
+                else:
+                    new_width = self.start_width + delta_x
+
+                # Impose boundaries (e.g., minimum 15 columns, maximum 80 columns)
+                new_width = max(15, min(new_width, 80))
+
+                # Apply the new width via CSS injection
+                target.styles.width = new_width
+            except NoMatches:
+                pass
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        """Triggered when the user releases the click."""
+        if self.is_dragging:
+            self.release_mouse()
+            self.is_dragging = False
+
+
+class EditorInstance(Widget):
     BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
         ("ctrl+s", "save_file", "Save File"),
         ("ctrl+r", "run", "Run"),
-        ("ctrl+f1", "toggle_left_sidebar", "Toggle Left"),
-        ("ctrl+f2", "toggle_right_sidebar", "Toggle Right"),
         ("shift+f1", "toggle_code_editor", "Toggle Code"),
-        ("shift+f2", "toggle_bottom_panel", "Toggle Panel"),
-        ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
+        ("shift+f2", "toggle_panel", "Toggle Panel"),
+        ("ctrl+f2", "toggle_controls", "Toggle Controls"),
     ]
 
-    def compose(self) -> ComposeResult:
-        # --- LEFT COLUMN: Project Files ---
-        with Vertical(id="project-directory"):
-            yield Label(f"⭘ {self.app.MODEL.project_name}", id="project-title-label", classes="pane-header")
-            yield DirectoryTree(self.app.MODEL.project_path, id="project-dir-tree")
-            yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
-
-        # --- MIDDLE COLUMN: Workspace ---
-        with Vertical(id="workspace"):
-            # Top Toolbar
-            with Horizontal(id='workspace-toolbar'):
-                self.open_file_label = Label("No Open File", classes='gray')
-                yield self.open_file_label
-                yield Spacer()
-                yield Button("Run", id="btn-run", classes="action-btn green", compact=True)
-                yield Label("| ", classes="gray")
-                yield Button("Undo", id="btn-undo", classes="action-btn orange", compact=True)
-                yield Label("| ", classes="gray")
-                yield Button("clear", id="btn-clear", classes="action-btn red", compact=True)
-
-            # Code Editor
-            self.code_editor_text_area: TextArea = TextArea.code_editor(
-                text="",
-                id="code-editor",
-                disabled=True
-            )
-            yield self.code_editor_text_area
-            # _.register_language()
-
-            # Plugin Panel
-            with TabbedContent(id="plugin-panel"):
-                # loop through the plugin TabPanes and yield them here
-                for plugin in self.app.MODEL.plugins:
-                    if _:=plugin.panel():
-                        yield _
-
-        # --- RIGHT COLUMN: Plugin Control Menu ---
-        with Vertical(id="plugin-controls"):
-            yield Label("", classes="pane-header", id="plugin-controls-header")
-            with ContentSwitcher(id="sidebar-switcher"):
-                # loop through the collapsable's that the plugin provides, and place in Vertical containers.
-                for i, plugin in enumerate(self.app.MODEL.plugins):
-                    with ScrollableContainer(id=f'tab-{i+1}'):
-                        for c in plugin.controls():
-                            yield c
-
-        # --- Footer ---
-        yield Footer()
-
-    # ==== Panel and Controls ====
-    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
-        """Dynamically switches the Right Sidebar content AND Title."""
-        container: ContentSwitcher = self.query_one('#sidebar-switcher')
-        container.current = event.pane.id
-        # noinspection PyProtectedMember
-        self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
-
-    # ==== File Manager ====
-    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
-        m: model.Model = self.app.MODEL
-        if not event.path.exists():
-            self.notify("That file no longer exists!", severity="error")
-            self.query_one(DirectoryTree).reload()
-            return
-        self.action_save_file()
-        m.open_file(event.path)
-        self.code_editor_text_area.text = m.read_file()
-        self.open_file_label.content = event.path.name
-
-    @on(Button.Pressed, '#btn_refresh_project_dir')
-    def btn_refresh_project_dir(self):
-        self.query_one(DirectoryTree).reload()
-        self.notify(f"Refreshed Project Directory...")
-
-    # ==== Action Handlers ====
     def action_run(self):
         """Action to press the run button upon this action..."""
-        self.query_one('#btn-run').press()
+        try: self.query_one('#toolbar-btn-exec').press()
+        except NoMatches: pass
 
     def action_save_file(self):
-        m: model.Model = self.app.MODEL
-        if m.write_file(self.code_editor_text_area.text):
-            self.notify(f"Saved the \"{m.flow_path.name}\" file.")
+        m: model.Model = self.MODEL
+        m.write_file(self.code_editor_text_area.text)
+        self._is_dirty = False
+        self.open_file_label.update(m.file_path.name)
+        # self.notify(f"Saved the \"{m.file_path.name}\" file.")
 
-    def action_toggle_left_sidebar(self):
-        sidebar = self.query_one("#project-directory")
-        sidebar.display = not sidebar.display
-
-    def action_toggle_right_sidebar(self):
+    def action_toggle_controls(self):
         menu = self.query_one("#plugin-controls")
         menu.display = not menu.display
 
-    def action_toggle_bottom_panel(self):
+    def action_toggle_panel(self):
         panel = self.query_one("#plugin-panel")
         panel.display = not panel.display
 
@@ -393,17 +389,12 @@ class EditorScreen(Screen):
         panel = self.query_one("#code-editor")
         panel.display = not panel.display
 
-    def action_toggle_max(self):
-        if not self.focused:  # if nothing is focused
-            return
-        if self.focused.is_in_maximized_view:
-            self.minimize()
-        else:
-            self.maximize(self.focused)
-
     # ==== Initial Setup and Signal Connections ====
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, file_path: Path, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Track the dirty state to prevent unnecessary polling for the "*" prefix
+        self._is_dirty: bool = False
 
         # ==== Signals ====
         self.sig_button_pressed: Signal[Button.Pressed] = Signal()
@@ -411,7 +402,15 @@ class EditorScreen(Screen):
         self.sig_input_submit: Signal[Input.Changed] = Signal()
         self.sig_selection_list_toggled: Signal[SelectionList.SelectionToggled] = Signal()
         self.sig_select_changed: Signal[Select.Changed] = Signal()
-        self.sig_save_config_directive: Signal = Signal()
+        self.sig_radio_set_changed: Signal[RadioSet.Changed] = Signal()
+
+        # ==== Model Interface ====
+        self.MODEL: model.Model = model.Model(
+            self.app.project_name,
+            self.app.project_path,
+            file_path,
+            self
+        )
 
     @on(Button.Pressed)
     def _emit_button_signals(self, event: Button.Pressed) -> None:
@@ -435,40 +434,260 @@ class EditorScreen(Screen):
 
     @on(Select.Changed)
     def _emit_select_changed(self, event: Select.Changed) -> None:
-        """Handle emitting the select changed signal"""
+        """Handle emitting the Select changed signal"""
         self.sig_select_changed.emit(event)
+
+    @on(RadioSet.Changed)
+    def _emit_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        """Handle emitting the RadioSet changed signal"""
+        self.sig_radio_set_changed.emit(event)
+
+    # ==== Composition ====
+    def compose(self) -> ComposeResult:
+        self.can_focus = True  # so that if all widgets are hidden, the actions (and bindings) can still work.
+
+        # --- MIDDLE COLUMN: Workspace Panel & Editor---
+        with Vertical(id="workspace"):
+            # Top Toolbar
+            with Horizontal(id='workspace-toolbar') as wt:
+                self.workspace_toolbar: Horizontal = wt  # this way plugins can add buttons or widgets here
+                self.reload_btn = Button('⟳', id='reload-file', classes='small-btn gray', tooltip='Reload', compact=True)
+                self.reload_btn.can_focus = False
+                yield self.reload_btn
+                self.open_file_label = Label(self.MODEL.file_path.name, classes='gray')
+                yield self.open_file_label
+                if (_:=self.screen.selected_variant) != 'main':
+                    yield Label(f' | {_}', classes='gray')
+                yield Spacer()
+
+            # Code Editor
+            self.code_editor_text_area: TextArea = TextArea.code_editor(
+                text=self.MODEL.read_file(),  # type: ignore
+                id="code-editor",
+                theme='css',
+                language=config.DEFAULT_SYNTAX_HIGHLIGHTING.get(self.MODEL.file_path.suffix, None)
+            )
+            yield self.code_editor_text_area
+
+            yield HorizontalSplitter(target_id="code-editor")  # TODO: fix bug weird bug where dragging sidebar size make collapsing code not work properly.
+
+            # Plugin Panel
+            with TabbedContent(id="plugin-panel"):
+                # loop through the plugin TabPanes and yield them here
+                for plugin in self.MODEL.plugins:
+                    if _ := plugin.panel():
+                        yield _
+
+        yield VerticalSplitter(target_id="plugin-controls", reverse=True)
+
+        # --- RIGHT COLUMN: Plugin Control Menu ---
+        with Vertical(id="plugin-controls"):
+            yield Label("", classes="pane-header", id="plugin-controls-header")
+            with ContentSwitcher(id="sidebar-switcher"):
+                # loop through the collapsable's that the plugin provides, and place in Vertical containers.
+                for i, plugin in enumerate(self.MODEL.plugins):
+                    with ScrollableContainer(id=f'tab-{i + 1}'):
+                        for c in plugin.controls():
+                            yield c
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
+        """Dynamically switches the Right Sidebar content AND Title to match the panel."""
+        container: ContentSwitcher = self.query_one('#sidebar-switcher')
+        container.current = event.pane.id  # make switch
+        self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
+
+    @on(Button.Pressed, '#reload-file')
+    def _hande_reload_button(self):
+        self.code_editor_text_area.text = self.MODEL.read_file()
+        self._is_dirty = False
+        self.open_file_label.update(self.MODEL.file_path.name)
+
+    @on(TextArea.Changed, "#code-editor")
+    def _on_editor_text_changed(self, event: TextArea.Changed) -> None:
+        """Fires when text changes, but only updates the UI once."""
+        if self._is_dirty:
+            return
+        if self.MODEL.is_dirty(event.text_area.text):
+            self._is_dirty = True
+            self.open_file_label.update(f"*{self.MODEL.file_path.name}")
+
+
+class EditorScreen(Screen):
+    """
+    The main IDE interface matching Image 2 with dynamic sidebar logic.
+    """
+    BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
+        ("ctrl+f1", "toggle_project_dir", "Toggle Files")
+    ]
+    selected_file: DirectoryTree.FileSelected | None = None
+    selected_variant: str = 'main'
+    variants: list[str] = []
+
+    def action_toggle_project_dir(self):
+        sidebar = self.query_one("#project-directory")
+        sidebar.display = not sidebar.display
+
+    def compose(self) -> ComposeResult:
+        # --- Project Files Panel ---
+        with Vertical(id="project-directory"):
+            yield Label(f"⭘ {self.app.project_name}", id="project-title-label", classes="pane-header")
+            with HorizontalGroup():
+                yield Label(f" Variant: ", markup=False)
+                yield Select((), prompt=self.selected_variant, compact=True, id="variant-selector")
+                yield Button('+', compact=True, classes='green small-btn', id="btn-add-variant")
+                yield Button('-', compact=True, classes='red small-btn', id="btn-remove-variant")
+            yield DirectoryTree(self.app.project_path, id="project-dir-tree")
+            yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
+
+        yield VerticalSplitter(target_id="project-directory")
+
+        # --- Workspace Section ---
+        self.loading_label = Label('> Please select a file <', id='loading-label')
+        self.editor_instance_switcher = ContentSwitcher(
+            self.loading_label,
+            initial="loading-label",
+            id='editor-instance-switcher'
+        )
+        yield self.editor_instance_switcher
+
+        # --- Footer ---
+        yield Footer()
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
+        path: Path = event.path
+        if not path.exists():
+            self.notify("That file no longer exists!", severity="error")
+            self.query_one(DirectoryTree).reload()
+            return
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', path.name)
+        instance_id = f"editor_{self.selected_variant.replace(' ', '-')}_{safe_name}"  # must start with something like "editor" to avoid invalid chars for id
+        if self.editor_instance_switcher.query(f"#{instance_id}"):
+            self.editor_instance_switcher.current = instance_id
+        else:
+            self.loading_label.content = f'Loading [u bold cyan]{path.name}[/] file...'
+            self.editor_instance_switcher.current = 'loading-label'
+            def _load_editor_instance():  # use function to perform update later so that loading screen works
+                new_editor = EditorInstance(id=instance_id, file_path=path)
+                self.editor_instance_switcher.mount(new_editor)
+                self.editor_instance_switcher.current = instance_id
+                if not new_editor.MODEL.plugins:
+                    new_editor.action_toggle_controls()
+                    new_editor.action_toggle_panel()
+            self.set_timer(0.1, _load_editor_instance)
+        self.selected_file = event
+
+    @on(Button.Pressed, '#btn-add-variant')
+    def btn_add_variant(self):
+
+        def handle_modal_result(result: dict) -> None:
+            if result["pressed_button"] == "Cancel":
+                return
+            variant_name: str = result["input"]["variant_name"]
+            if not variant_name:
+                self.notify("A new variant must be given a name!", severity="error")
+                return
+            if variant_name in self.variants:
+                self.notify("A variant with that name already exists!", severity="error")
+                return
+            self.variants.append(variant_name)
+            self.__refresh_variant_selector__()
+            self.notify(f"Created the \"{variant_name}\" variant...")
+
+        # Push the screen with the configuration and callback
+        self.app.push_screen(
+            ModalDialog(
+                title="Create Variant",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Project variants are a temporary (per-session) way to open multiple versions of the same file(s), enabling parallel editing and exploration."
+                    },
+                    {
+                        "type": "input",
+                        "prompt": "Variant Name",
+                        "placeholder": "e.g. version 2",
+                        "id": "variant_name"
+                    }
+                ],
+                buttons=["Create", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    @on(Button.Pressed, '#btn-remove-variant')
+    def btn_remove_variant(self):
+        if self.selected_variant == 'main':
+            self.notify("The main variant cannot be removed!", severity="error")
+            return
+
+        def handle_modal_result(result: dict):
+            if result.get("pressed_button") == "Continue":
+                self.notify(f"Deleted the \"{self.selected_variant}\" variant...")
+                self.variants.remove(self.selected_variant)
+                self.__refresh_variant_selector__()
+
+        self.app.push_screen(
+            ModalDialog(
+                title="Remove Variant?",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Please confirm variant removal..."
+                    }
+                ],
+                buttons=["Continue", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    def __refresh_variant_selector__(self) -> None:
+        """Helper to refresh the variant selector."""
+        ol: Select = self.query_one("#variant-selector")
+        ol.set_options([(f, i) for i, f in enumerate(self.variants)])
+        self.selected_variant = 'main'
+
+    @on(Select.Changed, '#variant-selector')
+    def select_variant(self, event: Select.Changed):
+        if isinstance(event.value, int):
+            self.selected_variant = self.variants[event.value]
+        else:
+            self.selected_variant = 'main'
+        if self.selected_file:
+            self.post_message(self.selected_file)
+
+    @on(Button.Pressed, '#btn_refresh_project_dir')
+    def btn_refresh_project_dir(self):
+        self.query_one(DirectoryTree).reload()
+        self.notify(f"Project directory was refreshed.")
 
 
 class Main(App):
-    CSS_PATH = "styles.tcss"
+    project_name: str = ''
+    project_path: Path = Path()
+    sig_exiting_studio: Signal = Signal()
 
-    @property
-    def editor_screen(self) -> EditorScreen:
-        return cast(EditorScreen, self.get_screen('editor'))
+    CSS_PATH = "styles.tcss"
 
     def on_mount(self):
         # create the screens and push the welcome page
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
         def on_project_opened(result: dict):
-            self.MODEL = model.Model(
-                result["project_name"],
-                result["project_path"],
-                self.editor_screen
-            )
+            self.project_name = result["project_name"]
+            self.project_path = result["project_path"]
+            flowlang_parser.set_working_dir(self.project_path)  # so that mmacros work nicely.
             self.push_screen("editor")
+            self.theme = 'rose-pine'
         self.push_screen("welcome", callback=on_project_opened)
 
     def action_quit(self):
-        if not hasattr(self, "MODEL"):
+        if isinstance(self.screen, WelcomeScreen):
             self.exit()
         def handle_modal_result(result: dict):
             if result["pressed_button"] == "Yes":
-                # noinspection PyUnresolvedReferences
                 self.screen.action_save_file()
                 if result["checkbox"]["save_config"]["value"]:
-                    # noinspection PyTypeChecker
-                    self.editor_screen.sig_save_config_directive.emit()
+                    self.sig_exiting_studio.emit()
                 self.exit()
         # Push the screen with the configuration and callback
         self.app.push_screen(
@@ -477,15 +696,16 @@ class Main(App):
                 fields=[
                     {
                         "type": "note",
-                        "text": "Saving the plugin configuration directs all plugins to save their settings (if supported)."
+                        "text": "Are you sure want to exit ruleflow studio? Don't forget to save you workflow if necessary.",
                     },
                     {
                         "type": "checkbox",
-                        "label": "Save plugin configuration",
+                        "label": "Let plugins cleanup",
+                        "initial": True,
                         "id": "save_config"
                     }
                 ],
-                buttons=["Yes", "No", "Cancel"]
+                buttons=["Yes", "No"]
             ),
             callback=handle_modal_result
         )

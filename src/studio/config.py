@@ -8,8 +8,14 @@ VERSION: str = "v0.1.0"
 BREAKING_VERSION: str = "v0.1.0"  # determines if a new config folder is needed
 USER_DATA_DIR_PATH: Path = _user_data_path(APPNAME, None, BREAKING_VERSION, ensure_exists=True)
 PROJECTS_LIST_PATH: Path = USER_DATA_DIR_PATH.joinpath('projects.json')
-SUPPORTED_FILE_TYPES: list[str] = ["*.flow", "*.md", "*.py"]
-
+HIDDEN_FILE_PATTERNS: list[str] = ["settings.yaml"]  # files that we do NOT want displayed to the user
+DEFAULT_SYNTAX_HIGHLIGHTING: dict[str, str] = {
+    '.py': 'python',
+    '.wl': 'rust',
+    '.yml': 'yaml',
+    '.yaml': 'yaml',
+    '.md': 'markdown',
+}
 
 class __RecentProjects:
     def __init__(self) -> None:

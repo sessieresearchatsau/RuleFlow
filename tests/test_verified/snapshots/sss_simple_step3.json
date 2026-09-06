@@ -1,0 +1,23 @@
+[
+  {
+    "time": 0,
+    "inert": false,
+    "causal_distance": 0,
+    "causally_connected": [],
+    "spaces": [[65, 66]]
+  },
+  {
+    "time": 1,
+    "inert": false,
+    "causal_distance": 1,
+    "causally_connected": [0],
+    "spaces": [[65, 66, 65, 66]]
+  },
+  {
+    "time": 2,
+    "inert": false,
+    "causal_distance": 2,
+    "causally_connected": [1, 1, 1],
+    "spaces": [[65, 65, 66, 66]]
+  }
+]
