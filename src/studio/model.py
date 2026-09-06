@@ -53,14 +53,33 @@ class Model:
             grab_plugins(module)
 
         # load all plugins classes
-        for pp in (self.project_path / "plugins").glob("*.py"):
-            module_name = f"plugins.{pp.stem}"  # make it appear as if it lives in a package called plugins.
-            # Dynamically import module
-            spec = importlib.util.spec_from_file_location(module_name, pp)  # tells Python how to load the file
-            module = importlib.util.module_from_spec(spec)  # allocates module object
-            sys.modules[module_name] = module  # makes it importable and unique
-            spec.loader.exec_module(module)  # populates module with code and objects
-            grab_plugins(module)
+        for pp in (self.project_path / "plugins").rglob("*.py"):
+            if pp.stem == "__init__":
+                continue  # Skip __init__.py files if they exist to avoid loading directories as modules
+
+            # Dynamically compute package path based on folder depth
+            # e.g., plugins/subdir/my_plugin.py -> ['plugins', 'subdir'] -> "plugins.subdir"
+            relative_parts = pp.relative_to(self.project_path).parent.parts
+            package_name = ".".join(relative_parts)
+            module_name = f"{package_name}.{pp.stem}"
+            plugin_dir = str(pp.parent)  # Get the concrete directory of the specific file being loaded
+            sys.path.insert(0, plugin_dir)   # Inject current file's directory into sys.path for absolute imports
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    pp,
+                    submodule_search_locations=[plugin_dir]
+                )
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                module.__package__ = package_name
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                grab_plugins(module)
+            finally:
+                if sys.path and sys.path[0] == plugin_dir:
+                    sys.path.pop(0)  # Clean up sys.path immediately to avoid pollution and order-of-import bugs
 
         # ======== Initialize the controllers (plugins) ========
         for p in self.plugins:
