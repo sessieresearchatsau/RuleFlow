@@ -4,7 +4,6 @@ from pathlib import Path
 
 # Studio Config Globals
 APPNAME: str = "RuleFlow Studio"
-VERSION: str = "v0.1.0"
 BREAKING_VERSION: str = "v0.1.0"  # determines if a new config folder is needed
 USER_DATA_DIR_PATH: Path = _user_data_path(APPNAME, None, BREAKING_VERSION, ensure_exists=True)
 PROJECTS_LIST_PATH: Path = USER_DATA_DIR_PATH.joinpath('projects.json')
