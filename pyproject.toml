@@ -1,6 +1,6 @@
 [project]
 name = "ruleflow"
-version = "1.0.2"
+version = "1.0.9"
 description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -25,6 +25,17 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://ruleflow.org"
-Documentation = "https://ruleflow.org"
+Documentation = "https://www.ruleflow.org/get-started/overview/"
 Repository = "https://github.com/RuleFlow-OSS/RuleFlow"
 Issues = "https://github.com/RuleFlow-OSS/RuleFlow/issues"
+
+[project.scripts]
+studio = "ruleflow.studio.view:run_studio_app"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+source-include = ["src/ruleflow/studio/*.tcss"]
