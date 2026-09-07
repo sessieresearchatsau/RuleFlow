@@ -1,6 +1,6 @@
 [project]
 name = "ruleflow"
-version = "1.0.9"
+version = "1.0.10"
 description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 readme = "README.md"
 requires-python = ">=3.14"
